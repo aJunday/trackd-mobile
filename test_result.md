@@ -213,6 +213,18 @@ backend:
         agent: "testing"
         comment: "✅ All nutrition endpoints working: GET /api/nutrition/today (returns nutrition summary with consumed/goals/remaining), GET /api/nutrition/meals (returns meals for date), POST /api/nutrition/meals (logs meal with 365 calories from chicken breast + rice), DELETE /api/nutrition/meals/{id} (deletes meal successfully). Meal totals calculation working correctly. Nutrition tracking and goal progress calculation functional."
 
+  - task: "Smart Pantry APIs"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ All Smart Pantry endpoints working perfectly: GET /api/pantry (empty/with items), POST /api/pantry (creates Chicken Breast item), GET /api/pantry/{item_id} (retrieves specific item), PUT /api/pantry/{item_id} (updates quantity to 400g), POST /api/pantry/{item_id}/use (uses 100g, remaining 300g), POST /api/pantry/scan-barcode (successfully looks up barcode 0070470496528 - Oui French style yogurt), GET /api/pantry?search=chicken (finds 1 chicken item), DELETE /api/pantry/{item_id} (deletes successfully). All CRUD operations, barcode lookup via OpenFoodFacts API, search functionality, and quantity management working correctly. Created test user: pantry@example.com with session token test_session_pantry_1775062318."
+
 frontend:
   - task: "Frontend Testing"
     implemented: false
@@ -229,13 +241,12 @@ frontend:
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Goal Calibration APIs"
-    - "Nutrition Tracking APIs"
+    - "Smart Pantry APIs"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -245,3 +256,5 @@ agent_communication:
     message: "Comprehensive backend API testing completed successfully. All 15 test cases passed (100% success rate). Created test user and session via mongosh, tested all health, auth, workout, and exercise endpoints. All CRUD operations working correctly. Database integration functional. Session management and Bearer token authentication working properly. No critical issues found."
   - agent: "testing"
     message: "Goal Calibration and Nutrition APIs testing completed successfully. All 13 new test cases passed (100% success rate). Created test user with goals@example.com and session token test_session_goals_1775060946489. ✅ Goal Calibration: PUT /api/users/goals, POST /api/users/calculate-tdee (TDEE: 2648), all preset applications (cutting: 2148, maintenance: 2648, bulking: 3148 calories). ✅ Nutrition Tracking: GET /api/nutrition/today, GET /api/nutrition/meals, POST /api/nutrition/meals (365 calories logged), DELETE /api/nutrition/meals. All endpoints working correctly with proper authentication, data persistence, and calculation accuracy."
+  - agent: "testing"
+    message: "Smart Pantry APIs testing completed successfully. All 10 test cases passed (100% success rate). Created test user pantry@example.com with session token test_session_pantry_1775062318. ✅ All pantry CRUD operations working: GET /api/pantry (empty/populated), POST /api/pantry (item creation), GET /api/pantry/{item_id} (specific item retrieval), PUT /api/pantry/{item_id} (quantity updates), POST /api/pantry/{item_id}/use (quantity usage tracking), DELETE /api/pantry/{item_id} (item deletion). ✅ Advanced features working: POST /api/pantry/scan-barcode (OpenFoodFacts API integration - successfully looked up barcode 0070470496528 for Oui French style yogurt), GET /api/pantry?search=chicken (search functionality). All endpoints properly authenticated, data persisted correctly, and business logic functioning as expected."

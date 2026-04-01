@@ -30,6 +30,7 @@ workout_router = APIRouter(prefix="/workouts", tags=["workouts"])
 exercise_router = APIRouter(prefix="/exercises", tags=["exercises"])
 nutrition_router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 user_router = APIRouter(prefix="/users", tags=["users"])
+pantry_router = APIRouter(prefix="/pantry", tags=["pantry"])
 
 # Configure logging
 logging.basicConfig(
@@ -157,6 +158,55 @@ class TDEECalculation(BaseModel):
     age: int
     gender: str
     activity_level: str
+
+# ==================== PANTRY MODELS ====================
+
+class PantryItem(BaseModel):
+    item_id: str = Field(default_factory=lambda: f"pi_{uuid.uuid4().hex[:12]}")
+    user_id: str
+    item_name: str
+    quantity: float = 1
+    unit: str = "serving"
+    calories_per_unit: float = 0
+    protein: float = 0
+    carbs: float = 0
+    fats: float = 0
+    barcode_id: Optional[str] = None
+    serving_size: Optional[str] = None
+    brand: Optional[str] = None
+    image_base64: Optional[str] = None
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_used: Optional[datetime] = None
+
+class PantryItemCreate(BaseModel):
+    item_name: str
+    quantity: float = 1
+    unit: str = "serving"
+    calories_per_unit: float = 0
+    protein: float = 0
+    carbs: float = 0
+    fats: float = 0
+    barcode_id: Optional[str] = None
+    serving_size: Optional[str] = None
+    brand: Optional[str] = None
+
+class PantryItemUpdate(BaseModel):
+    item_name: Optional[str] = None
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+    calories_per_unit: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fats: Optional[float] = None
+
+class BarcodeScanRequest(BaseModel):
+    barcode: str
+
+class LabelScanRequest(BaseModel):
+    image_base64: str
+
+class UseItemRequest(BaseModel):
+    quantity: float
 
 # ==================== AUTH HELPERS ====================
 
@@ -783,6 +833,282 @@ async def delete_meal(
     
     return {"message": "Meal deleted successfully"}
 
+# ==================== PANTRY ROUTES ====================
+
+# Initialize LLM for OCR (lazy loading)
+_llm_chat = None
+
+async def get_llm_chat():
+    global _llm_chat
+    if _llm_chat is None:
+        from emergentintegrations.llm.chat import LlmChat
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        _llm_chat = LlmChat(
+            api_key=api_key,
+            session_id=f"pantry_ocr_{uuid.uuid4().hex[:8]}",
+            system_message="""You are a nutrition label analyzer. When given an image of a nutrition facts label, 
+            extract the following information and return it as JSON:
+            {
+                "item_name": "product name if visible, otherwise 'Unknown Product'",
+                "serving_size": "the serving size text",
+                "calories_per_unit": numeric value of calories per serving,
+                "protein": numeric value of protein in grams,
+                "carbs": numeric value of carbohydrates in grams,
+                "fats": numeric value of total fat in grams,
+                "brand": "brand name if visible"
+            }
+            Only return the JSON object, no other text."""
+        ).with_model("openai", "gpt-4o")
+    return _llm_chat
+
+@pantry_router.get("")
+async def get_pantry_items(
+    search: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """Get all pantry items for current user."""
+    query = {"user_id": user.user_id}
+    
+    if search:
+        query["item_name"] = {"$regex": search, "$options": "i"}
+    
+    items = await db.pantry.find(
+        query,
+        {"_id": 0}
+    ).sort("added_at", -1).to_list(100)
+    
+    return {"items": items}
+
+@pantry_router.post("")
+async def add_pantry_item(
+    item_data: PantryItemCreate,
+    user: User = Depends(get_current_user)
+):
+    """Add a new item to pantry."""
+    item = PantryItem(
+        user_id=user.user_id,
+        **item_data.dict()
+    )
+    
+    await db.pantry.insert_one(item.dict())
+    
+    return item.dict()
+
+@pantry_router.get("/{item_id}")
+async def get_pantry_item(
+    item_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Get a specific pantry item."""
+    item = await db.pantry.find_one(
+        {"item_id": item_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    return item
+
+@pantry_router.put("/{item_id}")
+async def update_pantry_item(
+    item_id: str,
+    item_update: PantryItemUpdate,
+    user: User = Depends(get_current_user)
+):
+    """Update a pantry item."""
+    existing = await db.pantry.find_one(
+        {"item_id": item_id, "user_id": user.user_id}
+    )
+    
+    if not existing:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    update_data = {k: v for k, v in item_update.dict().items() if v is not None}
+    
+    if update_data:
+        await db.pantry.update_one(
+            {"item_id": item_id},
+            {"$set": update_data}
+        )
+    
+    updated = await db.pantry.find_one(
+        {"item_id": item_id},
+        {"_id": 0}
+    )
+    
+    return updated
+
+@pantry_router.delete("/{item_id}")
+async def delete_pantry_item(
+    item_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Delete a pantry item."""
+    result = await db.pantry.delete_one(
+        {"item_id": item_id, "user_id": user.user_id}
+    )
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    return {"message": "Item deleted successfully"}
+
+@pantry_router.post("/{item_id}/use")
+async def use_pantry_item(
+    item_id: str,
+    use_request: UseItemRequest,
+    user: User = Depends(get_current_user)
+):
+    """Use (subtract) quantity from a pantry item."""
+    item = await db.pantry.find_one(
+        {"item_id": item_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    new_quantity = item["quantity"] - use_request.quantity
+    
+    if new_quantity <= 0:
+        # Delete item if quantity reaches zero
+        await db.pantry.delete_one({"item_id": item_id})
+        return {"message": "Item used completely and removed", "remaining": 0}
+    
+    await db.pantry.update_one(
+        {"item_id": item_id},
+        {"$set": {
+            "quantity": new_quantity,
+            "last_used": datetime.now(timezone.utc)
+        }}
+    )
+    
+    return {"message": "Item quantity updated", "remaining": new_quantity}
+
+@pantry_router.post("/scan-barcode")
+async def scan_barcode(
+    request: BarcodeScanRequest,
+    user: User = Depends(get_current_user)
+):
+    """Lookup product information by barcode using OpenFoodFacts API."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://world.openfoodfacts.org/api/v2/product/{request.barcode}.json",
+                timeout=10.0
+            )
+            
+            if response.status_code != 200:
+                return {"found": False, "message": "Product not found in database"}
+            
+            data = response.json()
+            
+            if data.get("status") != 1:
+                return {"found": False, "message": "Product not found in database"}
+            
+            product = data.get("product", {})
+            nutriments = product.get("nutriments", {})
+            
+            return {
+                "found": True,
+                "item": {
+                    "item_name": product.get("product_name", "Unknown Product"),
+                    "brand": product.get("brands", ""),
+                    "serving_size": product.get("serving_size", ""),
+                    "calories_per_unit": nutriments.get("energy-kcal_serving", nutriments.get("energy-kcal_100g", 0)),
+                    "protein": nutriments.get("proteins_serving", nutriments.get("proteins_100g", 0)),
+                    "carbs": nutriments.get("carbohydrates_serving", nutriments.get("carbohydrates_100g", 0)),
+                    "fats": nutriments.get("fat_serving", nutriments.get("fat_100g", 0)),
+                    "barcode_id": request.barcode
+                }
+            }
+    except Exception as e:
+        logger.error(f"Barcode lookup error: {e}")
+        return {"found": False, "message": "Error looking up product"}
+
+@pantry_router.post("/scan-label")
+async def scan_nutrition_label(
+    request: LabelScanRequest,
+    user: User = Depends(get_current_user)
+):
+    """Use GPT-4o Vision to analyze a nutrition facts label image."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        import json
+        
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        # Create new chat instance for this request
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"pantry_ocr_{uuid.uuid4().hex[:8]}",
+            system_message="""You are a nutrition label analyzer. When given an image of a nutrition facts label, 
+            extract the following information and return it as valid JSON only:
+            {
+                "item_name": "product name if visible, otherwise 'Unknown Product'",
+                "serving_size": "the serving size text",
+                "calories_per_unit": numeric value of calories per serving (number only),
+                "protein": numeric value of protein in grams (number only),
+                "carbs": numeric value of carbohydrates in grams (number only),
+                "fats": numeric value of total fat in grams (number only),
+                "brand": "brand name if visible, otherwise empty string"
+            }
+            Only return the JSON object, no other text, no markdown formatting."""
+        ).with_model("openai", "gpt-4o")
+        
+        # Create image content
+        image_content = ImageContent(image_base64=request.image_base64)
+        
+        # Create message with image
+        user_message = UserMessage(
+            text="Please analyze this nutrition facts label and extract the nutritional information.",
+            image_contents=[image_content]
+        )
+        
+        # Send message and get response
+        response = await chat.send_message(user_message)
+        
+        # Parse the JSON response
+        try:
+            # Clean up response if needed
+            response_text = response.strip()
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+            response_text = response_text.strip()
+            
+            nutrition_data = json.loads(response_text)
+            
+            return {
+                "success": True,
+                "item": {
+                    "item_name": nutrition_data.get("item_name", "Unknown Product"),
+                    "serving_size": nutrition_data.get("serving_size", ""),
+                    "calories_per_unit": float(nutrition_data.get("calories_per_unit", 0)),
+                    "protein": float(nutrition_data.get("protein", 0)),
+                    "carbs": float(nutrition_data.get("carbs", 0)),
+                    "fats": float(nutrition_data.get("fats", 0)),
+                    "brand": nutrition_data.get("brand", "")
+                }
+            }
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response: {response}")
+            return {
+                "success": False,
+                "message": "Failed to parse nutrition information",
+                "raw_response": response
+            }
+            
+    except Exception as e:
+        logger.error(f"Label scan error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing label: {str(e)}")
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")
@@ -799,6 +1125,7 @@ api_router.include_router(workout_router)
 api_router.include_router(exercise_router)
 api_router.include_router(nutrition_router)
 api_router.include_router(user_router)
+api_router.include_router(pantry_router)
 app.include_router(api_router)
 
 # CORS middleware

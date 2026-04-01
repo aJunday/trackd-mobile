@@ -353,6 +353,13 @@ export default function KitchenScreen() {
         <View style={styles.quickActions}>
           <TouchableOpacity
             style={styles.actionButton}
+            onPress={() => router.push('/(auth)/pantry')}
+          >
+            <Ionicons name="basket-outline" size={24} color={ACCENT_COLOR} />
+            <Text style={styles.actionText}>View Pantry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
             onPress={() => router.push('/(auth)/goals')}
           >
             <Ionicons name="settings-outline" size={24} color={ACCENT_COLOR} />
@@ -607,6 +614,7 @@ const styles = StyleSheet.create({
   quickActions: {
     flexDirection: 'row',
     justifyContent: 'center',
+    gap: 12,
   },
   actionButton: {
     flexDirection: 'row',

@@ -93,6 +93,24 @@ export default function AuthLayout() {
           href: null, // Hide from tab bar
         }}
       />
+      <Tabs.Screen
+        name="pantry"
+        options={{
+          href: null, // Hide from tab bar - accessed from Kitchen
+        }}
+      />
+      <Tabs.Screen
+        name="scanner"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="add-pantry-item"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }

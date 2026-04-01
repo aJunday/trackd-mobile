@@ -233,33 +233,218 @@ def test_nutrition_endpoints():
     else:
         print_test_result("Delete meal", False, "No meal_id available from previous test")
 
+def test_pantry_endpoints():
+    """Test Smart Pantry CRUD endpoints."""
+    print("=" * 60)
+    print("🥫 TESTING SMART PANTRY ENDPOINTS")
+    print("=" * 60)
+    
+    created_item_id = None
+    
+    # Test 1: GET /api/pantry - Should return empty array initially
+    print("1. Testing GET /api/pantry (empty pantry)")
+    response = make_request("GET", "/pantry")
+    if response and response.status_code == 200:
+        data = response.json()
+        if "items" in data and isinstance(data["items"], list):
+            print_test_result("GET /api/pantry (empty)", True, 
+                            f"Status: {response.status_code}, Items count: {len(data['items'])}")
+        else:
+            print_test_result("GET /api/pantry (empty)", False, 
+                            f"Unexpected response format: {data}")
+    else:
+        print_test_result("GET /api/pantry (empty)", False, 
+                        f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 2: POST /api/pantry - Add a pantry item
+    print("2. Testing POST /api/pantry (add item)")
+    item_data = {
+        "item_name": "Chicken Breast",
+        "quantity": 500,
+        "unit": "g",
+        "calories_per_unit": 165,
+        "protein": 31,
+        "carbs": 0,
+        "fats": 3.6,
+        "brand": "Tyson",
+        "serving_size": "100g"
+    }
+    
+    response = make_request("POST", "/pantry", item_data)
+    if response and response.status_code == 200:
+        data = response.json()
+        if "item_id" in data and data["item_name"] == "Chicken Breast":
+            created_item_id = data["item_id"]
+            print_test_result("POST /api/pantry", True, 
+                            f"Status: {response.status_code}, Item ID: {created_item_id}")
+        else:
+            print_test_result("POST /api/pantry", False, 
+                            f"Unexpected response format: {data}")
+    else:
+        print_test_result("POST /api/pantry", False, 
+                        f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 3: GET /api/pantry - Verify item appears in list
+    print("3. Testing GET /api/pantry (with items)")
+    response = make_request("GET", "/pantry")
+    if response and response.status_code == 200:
+        data = response.json()
+        if "items" in data and len(data["items"]) > 0:
+            found_item = any(item["item_name"] == "Chicken Breast" for item in data["items"])
+            if found_item:
+                print_test_result("GET /api/pantry (with items)", True, 
+                                f"Status: {response.status_code}, Items count: {len(data['items'])}")
+            else:
+                print_test_result("GET /api/pantry (with items)", False, 
+                                "Created item not found in pantry list")
+        else:
+            print_test_result("GET /api/pantry (with items)", False, 
+                            "No items found in pantry after creation")
+    else:
+        print_test_result("GET /api/pantry (with items)", False, 
+                        f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 4: GET /api/pantry/{item_id} - Get specific item
+    if created_item_id:
+        print("4. Testing GET /api/pantry/{item_id}")
+        response = make_request("GET", f"/pantry/{created_item_id}")
+        if response and response.status_code == 200:
+            data = response.json()
+            if data["item_id"] == created_item_id and data["item_name"] == "Chicken Breast":
+                print_test_result("GET /api/pantry/{item_id}", True, 
+                                f"Status: {response.status_code}, Item: {data['item_name']}")
+            else:
+                print_test_result("GET /api/pantry/{item_id}", False, 
+                                f"Item data mismatch: {data}")
+        else:
+            print_test_result("GET /api/pantry/{item_id}", False, 
+                            f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 5: PUT /api/pantry/{item_id} - Update item quantity to 400
+    if created_item_id:
+        print("5. Testing PUT /api/pantry/{item_id}")
+        update_data = {"quantity": 400}
+        response = make_request("PUT", f"/pantry/{created_item_id}", update_data)
+        if response and response.status_code == 200:
+            data = response.json()
+            if data["quantity"] == 400:
+                print_test_result("PUT /api/pantry/{item_id}", True, 
+                                f"Status: {response.status_code}, New quantity: {data['quantity']}")
+            else:
+                print_test_result("PUT /api/pantry/{item_id}", False, 
+                                f"Quantity not updated correctly: {data['quantity']}")
+        else:
+            print_test_result("PUT /api/pantry/{item_id}", False, 
+                            f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 6: POST /api/pantry/{item_id}/use - Use 100g from item
+    if created_item_id:
+        print("6. Testing POST /api/pantry/{item_id}/use")
+        use_data = {"quantity": 100}
+        response = make_request("POST", f"/pantry/{created_item_id}/use", use_data)
+        if response and response.status_code == 200:
+            data = response.json()
+            if "remaining" in data and data["remaining"] == 300:
+                print_test_result("POST /api/pantry/{item_id}/use", True, 
+                                f"Status: {response.status_code}, Remaining: {data['remaining']}")
+            else:
+                print_test_result("POST /api/pantry/{item_id}/use", False, 
+                                f"Unexpected remaining quantity: {data}")
+        else:
+            print_test_result("POST /api/pantry/{item_id}/use", False, 
+                            f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 7: POST /api/pantry/scan-barcode - Test barcode lookup
+    print("7. Testing POST /api/pantry/scan-barcode")
+    barcode_data = {"barcode": "0070470496528"}  # Cheerios barcode
+    response = make_request("POST", "/pantry/scan-barcode", barcode_data)
+    if response and response.status_code == 200:
+        data = response.json()
+        if data.get("found") == True and "item" in data:
+            print_test_result("POST /api/pantry/scan-barcode", True, 
+                            f"Status: {response.status_code}, Product: {data['item'].get('item_name', 'Unknown')}")
+        else:
+            print_test_result("POST /api/pantry/scan-barcode", True, 
+                            f"Status: {response.status_code}, Product not found (expected for some barcodes)")
+    else:
+        print_test_result("POST /api/pantry/scan-barcode", False, 
+                        f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 8: GET /api/pantry?search=chicken - Test search functionality
+    print("8. Testing GET /api/pantry?search=chicken")
+    response = make_request("GET", "/pantry?search=chicken")
+    if response and response.status_code == 200:
+        data = response.json()
+        if "items" in data:
+            chicken_items = [item for item in data["items"] if "chicken" in item["item_name"].lower()]
+            if len(chicken_items) > 0:
+                print_test_result("GET /api/pantry?search=chicken", True, 
+                                f"Status: {response.status_code}, Found {len(chicken_items)} chicken items")
+            else:
+                print_test_result("GET /api/pantry?search=chicken", False, 
+                                "No chicken items found in search results")
+        else:
+            print_test_result("GET /api/pantry?search=chicken", False, 
+                            f"Unexpected response format: {data}")
+    else:
+        print_test_result("GET /api/pantry?search=chicken", False, 
+                        f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 9: DELETE /api/pantry/{item_id} - Delete the item
+    if created_item_id:
+        print("9. Testing DELETE /api/pantry/{item_id}")
+        response = make_request("DELETE", f"/pantry/{created_item_id}")
+        if response and response.status_code == 200:
+            data = response.json()
+            if "message" in data and "deleted" in data["message"].lower():
+                print_test_result("DELETE /api/pantry/{item_id}", True, 
+                                f"Status: {response.status_code}, Message: {data['message']}")
+            else:
+                print_test_result("DELETE /api/pantry/{item_id}", False, 
+                                f"Unexpected response: {data}")
+        else:
+            print_test_result("DELETE /api/pantry/{item_id}", False, 
+                            f"Status: {response.status_code if response else 'No response'}")
+    
+    # Test 10: Verify item is deleted - GET /api/pantry should be empty again
+    print("10. Testing GET /api/pantry (after delete)")
+    response = make_request("GET", "/pantry")
+    if response and response.status_code == 200:
+        data = response.json()
+        if "items" in data and len(data["items"]) == 0:
+            print_test_result("GET /api/pantry (after delete)", True, 
+                            f"Status: {response.status_code}, Items count: {len(data['items'])}")
+        else:
+            print_test_result("GET /api/pantry (after delete)", False, 
+                            f"Items still present after deletion: {len(data['items'])}")
+    else:
+        print_test_result("GET /api/pantry (after delete)", False, 
+                        f"Status: {response.status_code if response else 'No response'}")
+
 def main():
     """Main test execution."""
     global session_token, user_id
     
-    print("🧪 GOAL CALIBRATION AND NUTRITION API TESTING")
+    print("🧪 SMART PANTRY API TESTING")
     print("=" * 60)
     print(f"Backend URL: {BASE_URL}")
     print(f"Test started at: {datetime.now()}")
     print()
     
-    # Get session token from command line or prompt
-    if len(sys.argv) > 1:
-        session_token = sys.argv[1]
-        print(f"Using session token: {session_token[:20]}...")
-    else:
-        print("❌ ERROR: Session token required")
-        print("Usage: python backend_test.py <session_token>")
-        print("\nFirst create a test user and session using mongosh:")
-        print("""
-mongosh --eval "
+    # Create test user and session using mongosh for pantry testing
+    print("Creating test user and session for pantry testing...")
+    user_id = f"test-user-pantry-{int(datetime.now().timestamp())}"
+    session_token = f"test_session_pantry_{int(datetime.now().timestamp())}"
+    
+    # MongoDB commands to create test user and session
+    mongo_commands = f"""
 use('test_database');
-var userId = 'test-user-goals-' + Date.now();
-var sessionToken = 'test_session_goals_' + Date.now();
-db.users.insertOne({
+var userId = '{user_id}';
+var sessionToken = '{session_token}';
+db.users.insertOne({{
   user_id: userId,
-  email: 'goals@example.com',
-  name: 'Goals Test User',
+  email: 'pantry@example.com',
+  name: 'Pantry Test User',
   picture: '',
   weight: 75,
   height: 175,
@@ -271,21 +456,40 @@ db.users.insertOne({
   goal_protein: 150,
   goal_carbs: 250,
   goal_fats: 70,
-  protein_percent: 30,
-  carbs_percent: 40,
-  fats_percent: 30,
   created_at: new Date()
-});
-db.user_sessions.insertOne({
+}});
+db.user_sessions.insertOne({{
   user_id: userId,
   session_token: sessionToken,
   expires_at: new Date(Date.now() + 7*24*60*60*1000),
   created_at: new Date()
-});
+}});
 print('Session token: ' + sessionToken);
 print('User ID: ' + userId);
-"
-        """)
+"""
+    
+    # Execute MongoDB commands
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["mongosh", "--eval", mongo_commands],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            print(f"✅ Test user created successfully")
+            print(f"User ID: {user_id}")
+            print(f"Session Token: {session_token}")
+        else:
+            print(f"❌ Failed to create test user: {result.stderr}")
+            print("❌ Cannot proceed without authentication")
+            return
+            
+    except Exception as e:
+        print(f"❌ Error creating test user: {e}")
+        print("❌ Cannot proceed without authentication")
         return
     
     print()
@@ -302,9 +506,8 @@ print('User ID: ' + userId);
         print("❌ Cannot proceed without authentication")
         return
     
-    # Run tests
-    test_user_goals_endpoints()
-    test_nutrition_endpoints()
+    # Run pantry tests
+    test_pantry_endpoints()
     
     print("=" * 60)
     print("🏁 TESTING COMPLETED")
