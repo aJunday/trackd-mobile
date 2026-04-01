@@ -1267,6 +1267,213 @@ Template:
         
         raise HTTPException(status_code=500, detail=f"Error generating suggestions: {str(e)}")
 
+# ==================== MEAL IMAGE ANALYSIS ====================
+
+class MealImageAnalysisRequest(BaseModel):
+    image_base64: str
+    recent_recipe: Optional[dict] = None  # Last generated AI Chef recipe
+
+@pantry_router.post("/analyze-meal")
+async def analyze_meal_image(
+    request: MealImageAnalysisRequest,
+    user: User = Depends(get_current_user)
+):
+    """Use GPT-4o Vision to analyze a meal photo with high precision using pantry data."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        import json
+        
+        # Get user's pantry data
+        pantry_items = await db.pantry.find(
+            {"user_id": user.user_id},
+            {"_id": 0}
+        ).to_list(50)
+        
+        # Build pantry JSON for the prompt
+        pantry_json = [
+            {
+                "name": item["item_name"],
+                "per_100g": {
+                    "calories": round(item["calories_per_unit"], 1),
+                    "protein": round(item["protein"], 1),
+                    "carbs": round(item["carbs"], 1),
+                    "fats": round(item["fats"], 1)
+                }
+            }
+            for item in pantry_items
+        ]
+        
+        # Format recent recipe if provided
+        recipe_context = ""
+        if request.recent_recipe:
+            recipe_context = f"""
+Recent Recipe: {json.dumps(request.recent_recipe)}"""
+        
+        # Get user's daily goal
+        user_doc = await db.users.find_one(
+            {"user_id": user.user_id},
+            {"_id": 0}
+        )
+        daily_target = user_doc.get("goal_calories", 2200)
+        
+        # Build the precision prompt
+        prompt = f"""Goal: Extract precise macros from this meal image.
+
+Step 1 [Identification]: Identify every ingredient. Cross-reference with the [User Pantry List] provided. If a match is found, use those exact per-100g macros.
+Step 2 [Volume/Mass]: Use the reference object (fork/hand/plate edge) to estimate the weight of each item in grams (g). 
+Step 3 [Recipe Sync]: If this image matches the "AI Chef Recipe" recently generated, prioritize the recipe's known raw weights but adjust for visible "leftovers" or "extra portions."
+
+Rules:
+1. Output: Strict raw JSON only.
+2. Logic: (Weight_g / 100) * Pantry_Macro_Value.
+3. Constraint: If confidence is <92%, flag the "uncertain_items".
+
+Inputs:
+Pantry Data: {json.dumps(pantry_json)}
+{recipe_context}
+Target: {daily_target}kcal daily limit.
+
+Template:
+{{
+  "confidence_score": 0.92,
+  "total_m": {{"p":0, "c":0, "f":0, "k":0}},
+  "breakdown": [{{"item": "", "weight_g": 0, "source": "pantry|global_avg"}}],
+  "uncertain_items": []
+}}"""
+
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"meal_analysis_{uuid.uuid4().hex[:8]}",
+            system_message="You are a High-Precision Nutrition Radiologist. Your goal is 92%+ accuracy. Do not use generic averages if a specific pantry item is provided. Use the 'Hand/Fork' in the image as a scale for 3D volume estimation. Return only valid JSON, no markdown."
+        ).with_model("openai", "gpt-4o")
+        
+        # Create image content
+        image_content = ImageContent(image_base64=request.image_base64)
+        
+        # Create message with image
+        user_message = UserMessage(
+            text=prompt,
+            image_contents=[image_content]
+        )
+        
+        # Send message and get response
+        response = await chat.send_message(user_message)
+        
+        # Parse response
+        response_text = response.strip()
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        response_text = response_text.strip()
+        
+        try:
+            analysis = json.loads(response_text)
+            
+            # Extract and format the response
+            confidence = analysis.get("confidence_score", 0.85)
+            total_macros = analysis.get("total_m", {})
+            breakdown = analysis.get("breakdown", [])
+            uncertain = analysis.get("uncertain_items", [])
+            
+            return {
+                "success": True,
+                "confidence_score": confidence,
+                "high_confidence": confidence >= 0.92,
+                "total_macros": {
+                    "protein": total_macros.get("p", 0),
+                    "carbs": total_macros.get("c", 0),
+                    "fats": total_macros.get("f", 0),
+                    "calories": total_macros.get("k", 0)
+                },
+                "breakdown": [
+                    {
+                        "item": item.get("item", "Unknown"),
+                        "weight_g": item.get("weight_g", 0),
+                        "source": item.get("source", "global_avg"),
+                        "macros": {
+                            "protein": round(item.get("weight_g", 0) / 100 * next(
+                                (p["per_100g"]["protein"] for p in pantry_json if p["name"].lower() in item.get("item", "").lower()), 
+                                item.get("protein", 0)
+                            ), 1),
+                            "carbs": round(item.get("weight_g", 0) / 100 * next(
+                                (p["per_100g"]["carbs"] for p in pantry_json if p["name"].lower() in item.get("item", "").lower()), 
+                                item.get("carbs", 0)
+                            ), 1),
+                            "fats": round(item.get("weight_g", 0) / 100 * next(
+                                (p["per_100g"]["fats"] for p in pantry_json if p["name"].lower() in item.get("item", "").lower()), 
+                                item.get("fats", 0)
+                            ), 1),
+                        }
+                    }
+                    for item in breakdown
+                ],
+                "uncertain_items": uncertain,
+                "pantry_matches": sum(1 for item in breakdown if item.get("source") == "pantry")
+            }
+            
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse meal analysis response: {response_text}")
+            return {
+                "success": False,
+                "message": "Failed to analyze meal image. Please try again.",
+                "raw": response_text
+            }
+            
+    except Exception as e:
+        logger.error(f"Meal analysis error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing meal: {str(e)}")
+
+@nutrition_router.post("/log-from-analysis")
+async def log_meal_from_analysis(
+    analysis_data: dict,
+    meal_type: str = "lunch",
+    user: User = Depends(get_current_user)
+):
+    """Log a meal directly from image analysis results."""
+    try:
+        # Build meal items from analysis breakdown
+        items = []
+        for item in analysis_data.get("breakdown", []):
+            items.append({
+                "item_id": f"mi_{uuid.uuid4().hex[:12]}",
+                "name": item.get("item", "Unknown"),
+                "calories": item.get("macros", {}).get("calories", 0),
+                "protein": item.get("macros", {}).get("protein", 0),
+                "carbs": item.get("macros", {}).get("carbs", 0),
+                "fats": item.get("macros", {}).get("fats", 0),
+                "quantity": 1,
+                "unit": f"{item.get('weight_g', 0)}g"
+            })
+        
+        total_macros = analysis_data.get("total_macros", {})
+        
+        meal = Meal(
+            user_id=user.user_id,
+            meal_type=meal_type,
+            items=items,
+            total_calories=total_macros.get("calories", 0),
+            total_protein=total_macros.get("protein", 0),
+            total_carbs=total_macros.get("carbs", 0),
+            total_fats=total_macros.get("fats", 0)
+        )
+        
+        await db.meals.insert_one(meal.dict())
+        
+        return {
+            "success": True,
+            "meal": meal.dict(),
+            "message": "Meal logged successfully!"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error logging meal from analysis: {e}")
+        raise HTTPException(status_code=500, detail=f"Error logging meal: {str(e)}")
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")

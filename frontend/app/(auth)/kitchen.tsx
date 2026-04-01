@@ -316,13 +316,22 @@ export default function KitchenScreen() {
         <View style={styles.mealsSection}>
           <View style={styles.mealsSectionHeader}>
             <Text style={styles.cardTitle}>Today's Meals</Text>
-            <TouchableOpacity
-              style={styles.addMealButton}
-              onPress={() => router.push('/(auth)/log-meal')}
-            >
-              <Ionicons name="add" size={20} color="#000000" />
-              <Text style={styles.addMealText}>Log Meal</Text>
-            </TouchableOpacity>
+            <View style={styles.mealButtons}>
+              <TouchableOpacity
+                style={styles.snapMealButton}
+                onPress={() => router.push('/(auth)/meal-scanner')}
+              >
+                <Ionicons name="camera" size={18} color={ACCENT_COLOR} />
+                <Text style={styles.snapMealText}>Snap</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addMealButton}
+                onPress={() => router.push('/(auth)/log-meal')}
+              >
+                <Ionicons name="add" size={20} color="#000000" />
+                <Text style={styles.addMealText}>Log</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {nutritionData.meals.length === 0 ? (
@@ -558,6 +567,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  mealButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  snapMealButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: ACCENT_COLOR,
+  },
+  snapMealText: {
+    color: ACCENT_COLOR,
+    fontWeight: '600',
+    fontSize: 14,
   },
   addMealButton: {
     flexDirection: 'row',

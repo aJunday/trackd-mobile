@@ -117,6 +117,12 @@ export default function AuthLayout() {
           href: null, // Hide from tab bar
         }}
       />
+      <Tabs.Screen
+        name="meal-scanner"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }
