@@ -54,6 +54,15 @@ export default function AuthLayout() {
         }}
       />
       <Tabs.Screen
+        name="kitchen"
+        options={{
+          title: 'Kitchen',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="restaurant" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
           title: 'History',
@@ -69,6 +78,19 @@ export default function AuthLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
+        }}
+      />
+      {/* Hidden screens - accessible via navigation but not in tab bar */}
+      <Tabs.Screen
+        name="goals"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="log-meal"
+        options={{
+          href: null, // Hide from tab bar
         }}
       />
     </Tabs>

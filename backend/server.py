@@ -28,6 +28,8 @@ api_router = APIRouter(prefix="/api")
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 workout_router = APIRouter(prefix="/workouts", tags=["workouts"])
 exercise_router = APIRouter(prefix="/exercises", tags=["exercises"])
+nutrition_router = APIRouter(prefix="/nutrition", tags=["nutrition"])
+user_router = APIRouter(prefix="/users", tags=["users"])
 
 # Configure logging
 logging.basicConfig(
@@ -44,10 +46,18 @@ class User(BaseModel):
     name: str
     picture: Optional[str] = ""
     weight: Optional[float] = None
+    height: Optional[float] = None  # in cm
+    age: Optional[int] = None
+    gender: Optional[str] = None  # 'male', 'female', 'other'
+    activity_level: Optional[str] = "moderate"  # sedentary, light, moderate, active, very_active
+    goal_type: str = "maintenance"  # cutting, maintenance, bulking
     goal_calories: int = 2200
-    goal_protein: int = 150
-    goal_carbs: int = 250
-    goal_fats: int = 70
+    goal_protein: int = 150  # grams
+    goal_carbs: int = 250  # grams
+    goal_fats: int = 70  # grams
+    protein_percent: int = 30
+    carbs_percent: int = 40
+    fats_percent: int = 30
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserSession(BaseModel):
@@ -97,6 +107,56 @@ class ExerciseHistory(BaseModel):
     exercise_name: str
     last_sets: List[SetData]
     last_workout_date: datetime
+
+# ==================== NUTRITION MODELS ====================
+
+class MealItem(BaseModel):
+    item_id: str = Field(default_factory=lambda: f"mi_{uuid.uuid4().hex[:12]}")
+    name: str
+    calories: float = 0
+    protein: float = 0
+    carbs: float = 0
+    fats: float = 0
+    quantity: float = 1
+    unit: str = "serving"
+
+class Meal(BaseModel):
+    meal_id: str = Field(default_factory=lambda: f"meal_{uuid.uuid4().hex[:12]}")
+    user_id: str
+    meal_type: str = "snack"  # breakfast, lunch, dinner, snack
+    items: List[MealItem] = []
+    total_calories: float = 0
+    total_protein: float = 0
+    total_carbs: float = 0
+    total_fats: float = 0
+    logged_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    date: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+
+class MealCreate(BaseModel):
+    meal_type: str = "snack"
+    items: List[MealItem] = []
+
+class UserGoalsUpdate(BaseModel):
+    weight: Optional[float] = None
+    height: Optional[float] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    activity_level: Optional[str] = None
+    goal_type: Optional[str] = None
+    goal_calories: Optional[int] = None
+    goal_protein: Optional[int] = None
+    goal_carbs: Optional[int] = None
+    goal_fats: Optional[int] = None
+    protein_percent: Optional[int] = None
+    carbs_percent: Optional[int] = None
+    fats_percent: Optional[int] = None
+
+class TDEECalculation(BaseModel):
+    weight: float  # kg
+    height: float  # cm
+    age: int
+    gender: str
+    activity_level: str
 
 # ==================== AUTH HELPERS ====================
 
@@ -458,6 +518,271 @@ async def get_exercise_suggestions(
     
     return {"suggestions": sorted(all_exercises)[:20]}
 
+# ==================== USER GOALS ROUTES ====================
+
+def calculate_tdee(weight: float, height: float, age: int, gender: str, activity_level: str) -> int:
+    """Calculate TDEE using Mifflin-St Jeor equation."""
+    # BMR calculation
+    if gender.lower() == 'male':
+        bmr = 10 * weight + 6.25 * height - 5 * age + 5
+    else:
+        bmr = 10 * weight + 6.25 * height - 5 * age - 161
+    
+    # Activity multiplier
+    multipliers = {
+        'sedentary': 1.2,
+        'light': 1.375,
+        'moderate': 1.55,
+        'active': 1.725,
+        'very_active': 1.9
+    }
+    
+    multiplier = multipliers.get(activity_level.lower(), 1.55)
+    return int(bmr * multiplier)
+
+@user_router.put("/goals")
+async def update_user_goals(
+    goals: UserGoalsUpdate,
+    user: User = Depends(get_current_user)
+):
+    """Update user's fitness goals."""
+    update_data = {k: v for k, v in goals.dict().items() if v is not None}
+    
+    if update_data:
+        await db.users.update_one(
+            {"user_id": user.user_id},
+            {"$set": update_data}
+        )
+    
+    updated_user = await db.users.find_one(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    return updated_user
+
+@user_router.post("/calculate-tdee")
+async def calculate_user_tdee(
+    data: TDEECalculation,
+    user: User = Depends(get_current_user)
+):
+    """Calculate TDEE and suggested macros."""
+    tdee = calculate_tdee(
+        data.weight, data.height, data.age, data.gender, data.activity_level
+    )
+    
+    # Calculate presets
+    cutting = tdee - 500
+    maintenance = tdee
+    bulking = tdee + 500
+    
+    return {
+        "tdee": maintenance,
+        "presets": {
+            "cutting": {
+                "calories": cutting,
+                "protein": int(data.weight * 2.2),  # 2.2g per kg for cutting
+                "description": "TDEE - 500 for weight loss"
+            },
+            "maintenance": {
+                "calories": maintenance,
+                "protein": int(data.weight * 1.8),
+                "description": "Maintain current weight"
+            },
+            "bulking": {
+                "calories": bulking,
+                "protein": int(data.weight * 2.0),
+                "description": "TDEE + 500 for muscle gain"
+            }
+        }
+    }
+
+@user_router.post("/apply-preset/{preset_type}")
+async def apply_goal_preset(
+    preset_type: str,
+    user: User = Depends(get_current_user)
+):
+    """Apply a goal preset (cutting, maintenance, bulking)."""
+    user_doc = await db.users.find_one(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not all([user_doc.get("weight"), user_doc.get("height"), 
+                user_doc.get("age"), user_doc.get("gender")]):
+        raise HTTPException(
+            status_code=400, 
+            detail="Please set your weight, height, age, and gender first"
+        )
+    
+    tdee = calculate_tdee(
+        user_doc["weight"],
+        user_doc["height"],
+        user_doc["age"],
+        user_doc["gender"],
+        user_doc.get("activity_level", "moderate")
+    )
+    
+    presets = {
+        "cutting": {"calories": tdee - 500, "protein_mult": 2.2},
+        "maintenance": {"calories": tdee, "protein_mult": 1.8},
+        "bulking": {"calories": tdee + 500, "protein_mult": 2.0}
+    }
+    
+    if preset_type not in presets:
+        raise HTTPException(status_code=400, detail="Invalid preset type")
+    
+    preset = presets[preset_type]
+    calories = preset["calories"]
+    protein = int(user_doc["weight"] * preset["protein_mult"])
+    
+    # Calculate macros based on percentages (default: 30/40/30)
+    protein_cals = protein * 4
+    remaining_cals = calories - protein_cals
+    carbs = int(remaining_cals * 0.57 / 4)  # 57% of remaining to carbs
+    fats = int(remaining_cals * 0.43 / 9)   # 43% of remaining to fats
+    
+    update_data = {
+        "goal_type": preset_type,
+        "goal_calories": calories,
+        "goal_protein": protein,
+        "goal_carbs": carbs,
+        "goal_fats": fats
+    }
+    
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": update_data}
+    )
+    
+    return {
+        "message": f"Applied {preset_type} preset",
+        "goals": update_data
+    }
+
+# ==================== NUTRITION/MEAL ROUTES ====================
+
+@nutrition_router.get("/today")
+async def get_today_nutrition(user: User = Depends(get_current_user)):
+    """Get today's nutrition summary and remaining calories."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    # Get all meals for today
+    meals = await db.meals.find(
+        {"user_id": user.user_id, "date": today},
+        {"_id": 0}
+    ).to_list(100)
+    
+    # Calculate totals
+    total_calories = sum(m.get("total_calories", 0) for m in meals)
+    total_protein = sum(m.get("total_protein", 0) for m in meals)
+    total_carbs = sum(m.get("total_carbs", 0) for m in meals)
+    total_fats = sum(m.get("total_fats", 0) for m in meals)
+    
+    # Get user goals
+    user_doc = await db.users.find_one(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    goal_calories = user_doc.get("goal_calories", 2200)
+    goal_protein = user_doc.get("goal_protein", 150)
+    goal_carbs = user_doc.get("goal_carbs", 250)
+    goal_fats = user_doc.get("goal_fats", 70)
+    
+    # Calculate remaining
+    remaining_calories = goal_calories - total_calories
+    remaining_protein = goal_protein - total_protein
+    remaining_carbs = goal_carbs - total_carbs
+    remaining_fats = goal_fats - total_fats
+    
+    # Calculate progress percentage
+    calorie_progress = min(100, (total_calories / goal_calories * 100)) if goal_calories > 0 else 0
+    exceeded = total_calories > goal_calories * 1.1  # More than 10% over
+    
+    return {
+        "date": today,
+        "consumed": {
+            "calories": round(total_calories, 1),
+            "protein": round(total_protein, 1),
+            "carbs": round(total_carbs, 1),
+            "fats": round(total_fats, 1)
+        },
+        "goals": {
+            "calories": goal_calories,
+            "protein": goal_protein,
+            "carbs": goal_carbs,
+            "fats": goal_fats
+        },
+        "remaining": {
+            "calories": round(remaining_calories, 1),
+            "protein": round(remaining_protein, 1),
+            "carbs": round(remaining_carbs, 1),
+            "fats": round(remaining_fats, 1)
+        },
+        "progress": {
+            "calories_percent": round(calorie_progress, 1),
+            "exceeded": exceeded
+        },
+        "meals": meals
+    }
+
+@nutrition_router.get("/meals")
+async def get_meals(
+    date: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """Get meals for a specific date or today."""
+    target_date = date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    meals = await db.meals.find(
+        {"user_id": user.user_id, "date": target_date},
+        {"_id": 0}
+    ).sort("logged_at", 1).to_list(100)
+    
+    return {"meals": meals, "date": target_date}
+
+@nutrition_router.post("/meals")
+async def log_meal(
+    meal_data: MealCreate,
+    user: User = Depends(get_current_user)
+):
+    """Log a new meal."""
+    # Calculate totals from items
+    total_calories = sum(item.calories * item.quantity for item in meal_data.items)
+    total_protein = sum(item.protein * item.quantity for item in meal_data.items)
+    total_carbs = sum(item.carbs * item.quantity for item in meal_data.items)
+    total_fats = sum(item.fats * item.quantity for item in meal_data.items)
+    
+    meal = Meal(
+        user_id=user.user_id,
+        meal_type=meal_data.meal_type,
+        items=meal_data.items,
+        total_calories=total_calories,
+        total_protein=total_protein,
+        total_carbs=total_carbs,
+        total_fats=total_fats
+    )
+    
+    await db.meals.insert_one(meal.dict())
+    
+    return meal.dict()
+
+@nutrition_router.delete("/meals/{meal_id}")
+async def delete_meal(
+    meal_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Delete a logged meal."""
+    result = await db.meals.delete_one(
+        {"meal_id": meal_id, "user_id": user.user_id}
+    )
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    
+    return {"message": "Meal deleted successfully"}
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")
@@ -472,6 +797,8 @@ async def health_check():
 api_router.include_router(auth_router)
 api_router.include_router(workout_router)
 api_router.include_router(exercise_router)
+api_router.include_router(nutrition_router)
+api_router.include_router(user_router)
 app.include_router(api_router)
 
 # CORS middleware

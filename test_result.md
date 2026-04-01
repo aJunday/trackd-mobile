@@ -189,6 +189,30 @@ backend:
         agent: "testing"
         comment: "✅ Session token authentication working properly. Bearer token authentication implemented correctly. Session validation and user lookup functioning"
 
+  - task: "Goal Calibration APIs"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ All goal calibration endpoints working: PUT /api/users/goals (updates goals successfully), POST /api/users/calculate-tdee (calculates TDEE: 2648 with presets), POST /api/users/apply-preset/cutting (applies cutting: 2148 calories), POST /api/users/apply-preset/maintenance (applies maintenance: 2648 calories), POST /api/users/apply-preset/bulking (applies bulking: 3148 calories). TDEE calculation using Mifflin-St Jeor equation working correctly."
+
+  - task: "Nutrition Tracking APIs"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ All nutrition endpoints working: GET /api/nutrition/today (returns nutrition summary with consumed/goals/remaining), GET /api/nutrition/meals (returns meals for date), POST /api/nutrition/meals (logs meal with 365 calories from chicken breast + rice), DELETE /api/nutrition/meals/{id} (deletes meal successfully). Meal totals calculation working correctly. Nutrition tracking and goal progress calculation functional."
+
 frontend:
   - task: "Frontend Testing"
     implemented: false
@@ -205,16 +229,13 @@ frontend:
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Health Check Endpoints"
-    - "Auth Endpoints - Unauthenticated"
-    - "Auth Endpoints - Authenticated"
-    - "Workout CRUD Operations"
-    - "Exercise Endpoints"
+    - "Goal Calibration APIs"
+    - "Nutrition Tracking APIs"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -222,3 +243,5 @@ test_plan:
 agent_communication:
   - agent: "testing"
     message: "Comprehensive backend API testing completed successfully. All 15 test cases passed (100% success rate). Created test user and session via mongosh, tested all health, auth, workout, and exercise endpoints. All CRUD operations working correctly. Database integration functional. Session management and Bearer token authentication working properly. No critical issues found."
+  - agent: "testing"
+    message: "Goal Calibration and Nutrition APIs testing completed successfully. All 13 new test cases passed (100% success rate). Created test user with goals@example.com and session token test_session_goals_1775060946489. ✅ Goal Calibration: PUT /api/users/goals, POST /api/users/calculate-tdee (TDEE: 2648), all preset applications (cutting: 2148, maintenance: 2648, bulking: 3148 calories). ✅ Nutrition Tracking: GET /api/nutrition/today, GET /api/nutrition/meals, POST /api/nutrition/meals (365 calories logged), DELETE /api/nutrition/meals. All endpoints working correctly with proper authentication, data persistence, and calculation accuracy."

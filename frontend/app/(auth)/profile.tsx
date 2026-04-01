@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 
@@ -15,6 +16,7 @@ const ACCENT_COLOR = '#00D4FF';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   const handleLogout = () => {
     Alert.alert(
@@ -66,6 +68,15 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
 
+  // Get goal type label
+  const getGoalTypeLabel = () => {
+    switch (user?.goal_type) {
+      case 'cutting': return '🔥 Cutting';
+      case 'bulking': return '💪 Bulking';
+      default: return '⚖️ Maintenance';
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -81,9 +92,18 @@ export default function ProfileScreen() {
           <Text style={styles.userEmail}>{user?.email || ''}</Text>
         </View>
 
-        {/* Stats Summary */}
-        <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>Goals</Text>
+        {/* Goals Summary Card */}
+        <TouchableOpacity 
+          style={styles.statsCard}
+          onPress={() => router.push('/(auth)/goals')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.statsHeader}>
+            <Text style={styles.statsTitle}>Daily Goals</Text>
+            <View style={styles.goalTypeBadge}>
+              <Text style={styles.goalTypeText}>{getGoalTypeLabel()}</Text>
+            </View>
+          </View>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{user?.goal_calories || 2200}</Text>
@@ -102,20 +122,29 @@ export default function ProfileScreen() {
               <Text style={styles.statLabel}>Fats</Text>
             </View>
           </View>
-        </View>
+          <View style={styles.editHint}>
+            <Ionicons name="pencil" size={14} color={ACCENT_COLOR} />
+            <Text style={styles.editHintText}>Tap to edit goals</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* Menu Sections */}
+        <View style={styles.menuSection}>
+          <Text style={styles.sectionTitle}>Goals & Targets</Text>
+          <MenuItem
+            icon="fitness-outline"
+            title="Goals & Targets"
+            subtitle="Set calories, macros, and presets"
+            onPress={() => router.push('/(auth)/goals')}
+          />
+        </View>
+
         <View style={styles.menuSection}>
           <Text style={styles.sectionTitle}>Settings</Text>
           <MenuItem
             icon="person-outline"
             title="Edit Profile"
             subtitle="Update your personal information"
-          />
-          <MenuItem
-            icon="fitness-outline"
-            title="Fitness Goals"
-            subtitle="Set your calorie and macro targets"
           />
           <MenuItem
             icon="notifications-outline"
@@ -224,7 +253,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#888888',
+  },
+  statsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
+  },
+  goalTypeBadge: {
+    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  goalTypeText: {
+    color: ACCENT_COLOR,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  editHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 6,
+  },
+  editHintText: {
+    color: ACCENT_COLOR,
+    fontSize: 12,
   },
   statsGrid: {
     flexDirection: 'row',
