@@ -509,9 +509,177 @@ print('User ID: ' + userId);
     # Run pantry tests
     test_pantry_endpoints()
     
+    # Run AI Chef tests
+    test_ai_chef_endpoints()
+    
     print("=" * 60)
     print("🏁 TESTING COMPLETED")
     print(f"Test finished at: {datetime.now()}")
+
+def test_ai_chef_endpoints():
+    """Test AI Chef meal suggestion endpoints."""
+    print("\n" + "=" * 60)
+    print("🤖 TESTING AI CHEF ENDPOINTS")
+    print("=" * 60)
+    
+    # First, ensure we have pantry items for the AI Chef to work with
+    setup_ai_chef_test_data()
+    
+    # Test 1: AI Chef meal suggestions without auth
+    print("🔒 Testing AI Chef endpoint without authentication...")
+    response = make_request("POST", "/pantry/ai-chef/suggest", {"count": 2}, headers={})
+    if response and response.status_code == 401:
+        print_test_result("AI Chef - No Auth", True, "Correctly returns 401 without authentication")
+    else:
+        print_test_result("AI Chef - No Auth", False, f"Expected 401, got {response.status_code if response else 'No response'}")
+    
+    # Test 2: AI Chef meal suggestions with auth
+    print("🤖 Testing AI Chef meal suggestions...")
+    response = make_request("POST", "/pantry/ai-chef/suggest", {"count": 2})
+    
+    if response and response.status_code == 200:
+        data = response.json()
+        print(f"📥 Response: {json.dumps(data, indent=2)}")
+        
+        # Validate response structure
+        required_fields = ['success', 'meals', 'remaining', 'pantry_items_used']
+        missing_fields = [field for field in required_fields if field not in data]
+        
+        if missing_fields:
+            print_test_result("AI Chef - Response Structure", False, f"Missing fields: {missing_fields}")
+            return
+        
+        if not data.get('success'):
+            print_test_result("AI Chef - Success Flag", False, f"API returned success=false: {data.get('message', 'No message')}")
+            return
+        
+        # Validate meals structure
+        meals = data.get('meals', [])
+        if not isinstance(meals, list) or len(meals) == 0:
+            print_test_result("AI Chef - Meals Array", False, f"Expected non-empty array, got: {type(meals)} with {len(meals) if isinstance(meals, list) else 'N/A'} items")
+            return
+        
+        # Validate each meal structure
+        meal_validation_passed = True
+        for i, meal in enumerate(meals):
+            required_meal_fields = ['name', 'ingredients', 'instructions', 'macros']
+            missing_meal_fields = [field for field in required_meal_fields if field not in meal]
+            
+            if missing_meal_fields:
+                print_test_result("AI Chef - Meal Structure", False, f"Meal {i+1} missing fields: {missing_meal_fields}")
+                meal_validation_passed = False
+                break
+            
+            # Validate macros structure
+            macros = meal.get('macros', {})
+            required_macro_fields = ['calories', 'protein', 'carbs', 'fats']
+            missing_macro_fields = [field for field in required_macro_fields if field not in macros]
+            
+            if missing_macro_fields:
+                print_test_result("AI Chef - Macros Structure", False, f"Meal {i+1} macros missing fields: {missing_macro_fields}")
+                meal_validation_passed = False
+                break
+        
+        if not meal_validation_passed:
+            return
+        
+        # Validate remaining structure
+        remaining = data.get('remaining', {})
+        required_remaining_fields = ['calories', 'protein', 'carbs', 'fats']
+        missing_remaining_fields = [field for field in required_remaining_fields if field not in remaining]
+        
+        if missing_remaining_fields:
+            print_test_result("AI Chef - Remaining Structure", False, f"Missing remaining fields: {missing_remaining_fields}")
+            return
+        
+        # Validate pantry_items_used
+        pantry_items_used = data.get('pantry_items_used')
+        if not isinstance(pantry_items_used, int) or pantry_items_used <= 0:
+            print_test_result("AI Chef - Pantry Items Used", False, f"Expected positive integer, got: {pantry_items_used}")
+            return
+        
+        print_test_result("AI Chef - Meal Suggestions", True, f"Generated {len(meals)} meals using {pantry_items_used} pantry items")
+        
+        # Print meal details for verification
+        for i, meal in enumerate(meals, 1):
+            print(f"   Meal {i}: {meal['name']}")
+            print(f"     Ingredients: {', '.join(meal['ingredients'])}")
+            print(f"     Instructions: {meal['instructions'][:100]}{'...' if len(meal['instructions']) > 100 else ''}")
+            print(f"     Macros: {meal['macros']['calories']}kcal, {meal['macros']['protein']}g P, {meal['macros']['carbs']}g C, {meal['macros']['fats']}g F")
+        
+        print(f"   Remaining: {remaining['calories']}kcal, {remaining['protein']}g P, {remaining['carbs']}g C, {remaining['fats']}g F")
+        
+    else:
+        error_msg = f"Status: {response.status_code if response else 'No response'}"
+        if response:
+            try:
+                error_data = response.json()
+                error_msg += f", Error: {error_data}"
+            except:
+                error_msg += f", Raw: {response.text}"
+        print_test_result("AI Chef - Meal Suggestions", False, error_msg)
+
+def setup_ai_chef_test_data():
+    """Ensure we have pantry items for AI Chef testing."""
+    print("🛒 Setting up AI Chef test data...")
+    
+    # Check if we already have pantry items
+    response = make_request("GET", "/pantry")
+    if response and response.status_code == 200:
+        data = response.json()
+        items = data.get('items', [])
+        
+        if len(items) >= 4:
+            print(f"✅ Found {len(items)} existing pantry items")
+            return
+    
+    # Add test pantry items
+    test_items = [
+        {
+            "item_name": "Chicken Breast",
+            "quantity": 500,
+            "unit": "g",
+            "calories_per_unit": 165,
+            "protein": 31,
+            "carbs": 0,
+            "fats": 3.6
+        },
+        {
+            "item_name": "Brown Rice",
+            "quantity": 400,
+            "unit": "g",
+            "calories_per_unit": 111,
+            "protein": 2.6,
+            "carbs": 23,
+            "fats": 0.9
+        },
+        {
+            "item_name": "Eggs",
+            "quantity": 12,
+            "unit": "piece",
+            "calories_per_unit": 78,
+            "protein": 6,
+            "carbs": 0.6,
+            "fats": 5
+        },
+        {
+            "item_name": "Broccoli",
+            "quantity": 300,
+            "unit": "g",
+            "calories_per_unit": 34,
+            "protein": 2.8,
+            "carbs": 7,
+            "fats": 0.4
+        }
+    ]
+    
+    added_count = 0
+    for item in test_items:
+        response = make_request("POST", "/pantry", item)
+        if response and response.status_code == 200:
+            added_count += 1
+    
+    print(f"✅ Added {added_count}/{len(test_items)} pantry items for AI Chef testing")
 
 if __name__ == "__main__":
     main()

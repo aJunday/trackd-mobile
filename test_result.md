@@ -241,15 +241,27 @@ frontend:
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Smart Pantry APIs"
+    - "AI Chef Meal Suggestions API"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+  - task: "AI Chef Meal Suggestions API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ AI Chef meal suggestion endpoint working correctly. POST /api/pantry/ai-chef/suggest returns proper JSON response with success=true, meals array (2 meals generated), remaining macros (calories: 2200, protein: 150, carbs: 250, fats: 70), and pantry_items_used: 4. Authentication properly enforced (401 without Bearer token). LLM integration with GPT-4o functioning correctly. Meal suggestions include realistic ingredients from pantry items (Chicken Breast, Brown Rice, Eggs, Broccoli), proper instructions, and calculated macros. Response structure matches expected format with all required fields present."
 
 agent_communication:
   - agent: "testing"
@@ -258,3 +270,5 @@ agent_communication:
     message: "Goal Calibration and Nutrition APIs testing completed successfully. All 13 new test cases passed (100% success rate). Created test user with goals@example.com and session token test_session_goals_1775060946489. ✅ Goal Calibration: PUT /api/users/goals, POST /api/users/calculate-tdee (TDEE: 2648), all preset applications (cutting: 2148, maintenance: 2648, bulking: 3148 calories). ✅ Nutrition Tracking: GET /api/nutrition/today, GET /api/nutrition/meals, POST /api/nutrition/meals (365 calories logged), DELETE /api/nutrition/meals. All endpoints working correctly with proper authentication, data persistence, and calculation accuracy."
   - agent: "testing"
     message: "Smart Pantry APIs testing completed successfully. All 10 test cases passed (100% success rate). Created test user pantry@example.com with session token test_session_pantry_1775062318. ✅ All pantry CRUD operations working: GET /api/pantry (empty/populated), POST /api/pantry (item creation), GET /api/pantry/{item_id} (specific item retrieval), PUT /api/pantry/{item_id} (quantity updates), POST /api/pantry/{item_id}/use (quantity usage tracking), DELETE /api/pantry/{item_id} (item deletion). ✅ Advanced features working: POST /api/pantry/scan-barcode (OpenFoodFacts API integration - successfully looked up barcode 0070470496528 for Oui French style yogurt), GET /api/pantry?search=chicken (search functionality). All endpoints properly authenticated, data persisted correctly, and business logic functioning as expected."
+  - agent: "testing"
+    message: "AI Chef Meal Suggestions API testing completed successfully. ✅ POST /api/pantry/ai-chef/suggest endpoint working correctly with proper authentication (401 without Bearer token), GPT-4o LLM integration functional, returns valid JSON response with success=true, meals array containing 2 realistic meal suggestions using pantry items (Chicken Breast, Brown Rice, Eggs, Broccoli), proper macros calculation, remaining nutrition goals, and pantry_items_used count. Response structure matches all expected fields. Fixed LLM integration issue (UserMessage object requirement) during testing. Created test user with pantry items as specified in review request. All functionality verified and working as designed."

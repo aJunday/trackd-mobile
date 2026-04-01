@@ -1109,6 +1109,158 @@ async def scan_nutrition_label(
         logger.error(f"Label scan error: {e}")
         raise HTTPException(status_code=500, detail=f"Error analyzing label: {str(e)}")
 
+# ==================== AI CHEF ROUTES ====================
+
+class MealSuggestionRequest(BaseModel):
+    count: int = 3  # Number of meals to suggest
+
+@pantry_router.post("/ai-chef/suggest")
+async def get_ai_meal_suggestions(
+    request: MealSuggestionRequest,
+    user: User = Depends(get_current_user)
+):
+    """Use AI to suggest meals based on pantry items and remaining macros."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        import json
+        
+        # Get pantry items
+        pantry_items = await db.pantry.find(
+            {"user_id": user.user_id},
+            {"_id": 0}
+        ).to_list(50)
+        
+        if not pantry_items:
+            return {
+                "success": False,
+                "message": "No items in pantry. Add some items first!"
+            }
+        
+        # Get today's nutrition data
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        meals = await db.meals.find(
+            {"user_id": user.user_id, "date": today},
+            {"_id": 0}
+        ).to_list(100)
+        
+        # Calculate consumed
+        consumed_cal = sum(m.get("total_calories", 0) for m in meals)
+        consumed_p = sum(m.get("total_protein", 0) for m in meals)
+        consumed_c = sum(m.get("total_carbs", 0) for m in meals)
+        consumed_f = sum(m.get("total_fats", 0) for m in meals)
+        
+        # Get user goals
+        user_doc = await db.users.find_one(
+            {"user_id": user.user_id},
+            {"_id": 0}
+        )
+        
+        goal_cal = user_doc.get("goal_calories", 2200)
+        goal_p = user_doc.get("goal_protein", 150)
+        goal_c = user_doc.get("goal_carbs", 250)
+        goal_f = user_doc.get("goal_fats", 70)
+        
+        # Calculate remaining
+        rem_cal = max(0, goal_cal - consumed_cal)
+        rem_p = max(0, goal_p - consumed_p)
+        rem_c = max(0, goal_c - consumed_c)
+        rem_f = max(0, goal_f - consumed_f)
+        
+        # Build short pantry list
+        short_pantry = ", ".join([
+            f"{item['item_name']} ({item['quantity']}{item['unit']})"
+            for item in pantry_items[:15]  # Limit to 15 items
+        ])
+        
+        # Build prompt
+        prompt = f"""Goal: Suggest {request.count} meals using [Pantry] to hit {rem_cal}kcal.
+Rules:
+1. Max 2 sentence instructions per meal.
+2. Focus: High Protein.
+3. Use ONLY items from [Pantry].
+4. Output: Strict JSON only.
+
+Input:
+Pantry: {short_pantry}
+Remaining: {int(rem_cal)}kcal, {int(rem_p)}g P, {int(rem_c)}g C, {int(rem_f)}g F.
+
+JSON Template:
+{{"m": [{{"n": "Name", "i": ["item"], "s": "Short instructions", "ma": {{"p": 0, "c": 0, "f": 0, "k": 0}}}}]}}"""
+
+        api_key = os.getenv("EMERGENT_LLM_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="LLM API key not configured")
+        
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"ai_chef_{uuid.uuid4().hex[:8]}",
+            system_message="You are an AI Chef. Return only valid JSON, no markdown or explanations."
+        ).with_model("openai", "gpt-4o")
+        
+        from emergentintegrations.llm.chat import UserMessage
+        
+        user_message = UserMessage(text=prompt)
+        response = await chat.send_message(user_message)
+        
+        # Parse response
+        response_text = response.strip()
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        response_text = response_text.strip()
+        
+        try:
+            suggestions = json.loads(response_text)
+            
+            # Transform to more readable format
+            meals = []
+            for meal in suggestions.get("m", []):
+                meals.append({
+                    "name": meal.get("n", "Meal"),
+                    "ingredients": meal.get("i", []),
+                    "instructions": meal.get("s", ""),
+                    "macros": {
+                        "protein": meal.get("ma", {}).get("p", 0),
+                        "carbs": meal.get("ma", {}).get("c", 0),
+                        "fats": meal.get("ma", {}).get("f", 0),
+                        "calories": meal.get("ma", {}).get("k", 0)
+                    }
+                })
+            
+            return {
+                "success": True,
+                "meals": meals,
+                "remaining": {
+                    "calories": int(rem_cal),
+                    "protein": int(rem_p),
+                    "carbs": int(rem_c),
+                    "fats": int(rem_f)
+                },
+                "pantry_items_used": len(pantry_items)
+            }
+            
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse AI Chef response: {response_text}")
+            return {
+                "success": False,
+                "message": "AI returned invalid response. Please try again.",
+                "raw": response_text
+            }
+            
+    except Exception as e:
+        logger.error(f"AI Chef error: {e}")
+        
+        # Check if it's a budget exceeded error and provide helpful message
+        if "Budget has been exceeded" in str(e):
+            return {
+                "success": False,
+                "message": "AI service temporarily unavailable due to budget limits. Please try again later.",
+                "error_type": "budget_exceeded"
+            }
+        
+        raise HTTPException(status_code=500, detail=f"Error generating suggestions: {str(e)}")
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")

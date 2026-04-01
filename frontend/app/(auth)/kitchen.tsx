@@ -294,6 +294,24 @@ export default function KitchenScreen() {
           />
         </View>
 
+        {/* AI Chef Button */}
+        <TouchableOpacity
+          style={styles.aiChefButton}
+          onPress={() => router.push('/(auth)/ai-chef')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.aiChefIcon}>
+            <Ionicons name="sparkles" size={24} color="#000000" />
+          </View>
+          <View style={styles.aiChefContent}>
+            <Text style={styles.aiChefTitle}>AI Chef</Text>
+            <Text style={styles.aiChefSubtitle}>
+              Get meal suggestions from your pantry
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={ACCENT_COLOR} />
+        </TouchableOpacity>
+
         {/* Today's Meals */}
         <View style={styles.mealsSection}>
           <View style={styles.mealsSectionHeader}>
@@ -610,6 +628,38 @@ const styles = StyleSheet.create({
   mealMacro: {
     fontSize: 13,
     color: '#888888',
+  },
+  aiChefButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0A0A0A',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: ACCENT_COLOR,
+  },
+  aiChefIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: ACCENT_COLOR,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  aiChefContent: {
+    flex: 1,
+  },
+  aiChefTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  aiChefSubtitle: {
+    fontSize: 13,
+    color: '#888888',
+    marginTop: 2,
   },
   quickActions: {
     flexDirection: 'row',

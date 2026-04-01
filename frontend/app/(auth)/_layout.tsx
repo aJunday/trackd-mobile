@@ -111,6 +111,12 @@ export default function AuthLayout() {
           href: null, // Hide from tab bar
         }}
       />
+      <Tabs.Screen
+        name="ai-chef"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }
