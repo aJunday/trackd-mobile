@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Backend API Testing Script for Goal Calibration and Nutrition APIs
-Tests the new endpoints at https://fitness-command-7.preview.emergentagent.com
+Backend API Testing Script for Enhanced AI Chef Recipe API
+Tests the enhanced AI Chef endpoint at https://fitness-command-7.preview.emergentagent.com
 """
 
 import requests
 import json
+import subprocess
 import sys
 from datetime import datetime
 

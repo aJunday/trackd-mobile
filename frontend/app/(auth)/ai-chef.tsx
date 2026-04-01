@@ -21,7 +21,8 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 interface Meal {
   name: string;
   ingredients: string[];
-  instructions: string;
+  recipe: string[];  // Step-by-step instructions
+  cook_time: number; // Minutes
   macros: {
     protein: number;
     carbs: number;
@@ -217,7 +218,15 @@ export default function AIChefScreen() {
                   <View style={styles.mealNumber}>
                     <Text style={styles.mealNumberText}>{index + 1}</Text>
                   </View>
-                  <Text style={styles.mealName}>{meal.name}</Text>
+                  <View style={styles.mealTitleSection}>
+                    <Text style={styles.mealName}>{meal.name}</Text>
+                    {meal.cook_time > 0 && (
+                      <View style={styles.cookTimeTag}>
+                        <Ionicons name="time-outline" size={12} color="#888888" />
+                        <Text style={styles.cookTimeText}>{meal.cook_time} min</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 {/* Macros */}
@@ -248,7 +257,9 @@ export default function AIChefScreen() {
 
                 {/* Ingredients */}
                 <View style={styles.ingredientsSection}>
-                  <Text style={styles.ingredientsTitle}>Ingredients</Text>
+                  <Text style={styles.sectionLabel}>
+                    <Ionicons name="list-outline" size={14} color="#888888" /> Ingredients
+                  </Text>
                   <View style={styles.ingredientsList}>
                     {meal.ingredients.map((ingredient, i) => (
                       <View key={i} style={styles.ingredientChip}>
@@ -258,10 +269,23 @@ export default function AIChefScreen() {
                   </View>
                 </View>
 
-                {/* Instructions */}
-                <View style={styles.instructionsSection}>
-                  <Text style={styles.instructionsTitle}>Instructions</Text>
-                  <Text style={styles.instructionsText}>{meal.instructions}</Text>
+                {/* Recipe Steps */}
+                <View style={styles.recipeSection}>
+                  <Text style={styles.sectionLabel}>
+                    <Ionicons name="restaurant-outline" size={14} color="#888888" /> Recipe
+                  </Text>
+                  {meal.recipe && meal.recipe.length > 0 ? (
+                    meal.recipe.map((step, i) => (
+                      <View key={i} style={styles.recipeStep}>
+                        <View style={styles.stepNumber}>
+                          <Text style={styles.stepNumberText}>{i + 1}</Text>
+                        </View>
+                        <Text style={styles.stepText}>{step}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noRecipeText}>Quick meal - no cooking required!</Text>
+                  )}
                 </View>
               </View>
             ))}
@@ -468,7 +492,7 @@ const styles = StyleSheet.create({
   },
   mealHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
   mealNumber: {
@@ -479,17 +503,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    marginTop: 2,
   },
   mealNumberText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#000000',
   },
+  mealTitleSection: {
+    flex: 1,
+  },
   mealName: {
     fontSize: 18,
     fontWeight: '600',
     color: '#FFFFFF',
-    flex: 1,
+  },
+  cookTimeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  cookTimeText: {
+    fontSize: 12,
+    color: '#888888',
   },
   mealMacros: {
     flexDirection: 'row',
@@ -515,10 +552,11 @@ const styles = StyleSheet.create({
   ingredientsSection: {
     marginBottom: 16,
   },
-  ingredientsTitle: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 8,
+  sectionLabel: {
+    fontSize: 13,
+    color: '#888888',
+    marginBottom: 10,
+    fontWeight: '500',
   },
   ingredientsList: {
     flexDirection: 'row',
@@ -528,12 +566,47 @@ const styles = StyleSheet.create({
   ingredientChip: {
     backgroundColor: 'rgba(0, 212, 255, 0.1)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 16,
   },
   ingredientText: {
     fontSize: 13,
     color: ACCENT_COLOR,
+  },
+  recipeSection: {
+    borderTopWidth: 1,
+    borderTopColor: '#1A1A1A',
+    paddingTop: 16,
+  },
+  recipeStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  stepNumberText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: ACCENT_COLOR,
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#CCCCCC',
+    lineHeight: 20,
+  },
+  noRecipeText: {
+    fontSize: 14,
+    color: '#888888',
+    fontStyle: 'italic',
   },
   instructionsSection: {},
   instructionsTitle: {

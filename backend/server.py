@@ -1166,26 +1166,29 @@ async def get_ai_meal_suggestions(
         rem_c = max(0, goal_c - consumed_c)
         rem_f = max(0, goal_f - consumed_f)
         
-        # Build short pantry list
-        short_pantry = ", ".join([
-            f"{item['item_name']} ({item['quantity']}{item['unit']})"
+        # Build pantry list with full details
+        pantry_list = ", ".join([
+            f"{item['item_name']} ({item['quantity']}{item['unit']}, {item['calories_per_unit']}cal, {item['protein']}g P)"
             for item in pantry_items[:15]  # Limit to 15 items
         ])
         
-        # Build prompt
-        prompt = f"""Goal: Suggest {request.count} meals using [Pantry] to hit {rem_cal}kcal.
+        # Build enhanced recipe prompt
+        prompt = f"""Goal: Suggest {request.count} complete recipes using [Pantry] to fit {int(rem_cal)}kcal.
+
 Rules:
-1. Max 2 sentence instructions per meal.
-2. Focus: High Protein.
-3. Use ONLY items from [Pantry].
-4. Output: Strict JSON only.
+1. "n": Meal Name.
+2. "i": Exact ingredients used from [Pantry] with quantities.
+3. "r": Full step-by-step cooking instructions. Be thorough but concise.
+4. "m": Macros object {{p: protein, c: carbs, f: fat, k: calories}}.
+5. "t": Total prep/cook time in minutes.
+6. Output: Strict raw JSON only.
 
-Input:
-Pantry: {short_pantry}
-Remaining: {int(rem_cal)}kcal, {int(rem_p)}g P, {int(rem_c)}g C, {int(rem_f)}g F.
+Inputs:
+Pantry: {pantry_list}
+Remaining Today: {int(rem_cal)}kcal, {int(rem_p)}g P, {int(rem_c)}g C, {int(rem_f)}g F.
 
-JSON Template:
-{{"m": [{{"n": "Name", "i": ["item"], "s": "Short instructions", "ma": {{"p": 0, "c": 0, "f": 0, "k": 0}}}}]}}"""
+Template:
+{{"meals": [{{"n": "", "i": [], "r": [], "m": {{"p":0,"c":0,"f":0,"k":0}}, "t": 0}}]}}"""
 
         api_key = os.getenv("EMERGENT_LLM_KEY")
         if not api_key:
@@ -1213,18 +1216,21 @@ JSON Template:
         try:
             suggestions = json.loads(response_text)
             
-            # Transform to more readable format
+            # Transform to more readable format (handle both old and new format)
             meals = []
-            for meal in suggestions.get("m", []):
+            meal_list = suggestions.get("meals", suggestions.get("m", []))
+            
+            for meal in meal_list:
                 meals.append({
-                    "name": meal.get("n", "Meal"),
-                    "ingredients": meal.get("i", []),
-                    "instructions": meal.get("s", ""),
+                    "name": meal.get("n", meal.get("name", "Meal")),
+                    "ingredients": meal.get("i", meal.get("ingredients", [])),
+                    "recipe": meal.get("r", meal.get("recipe", [])),  # Step-by-step instructions
+                    "cook_time": meal.get("t", meal.get("cook_time", 0)),  # Minutes
                     "macros": {
-                        "protein": meal.get("ma", {}).get("p", 0),
-                        "carbs": meal.get("ma", {}).get("c", 0),
-                        "fats": meal.get("ma", {}).get("f", 0),
-                        "calories": meal.get("ma", {}).get("k", 0)
+                        "protein": meal.get("m", meal.get("ma", meal.get("macros", {}))).get("p", meal.get("m", {}).get("protein", 0)),
+                        "carbs": meal.get("m", meal.get("ma", meal.get("macros", {}))).get("c", meal.get("m", {}).get("carbs", 0)),
+                        "fats": meal.get("m", meal.get("ma", meal.get("macros", {}))).get("f", meal.get("m", {}).get("fats", 0)),
+                        "calories": meal.get("m", meal.get("ma", meal.get("macros", {}))).get("k", meal.get("m", {}).get("calories", 0))
                     }
                 })
             
