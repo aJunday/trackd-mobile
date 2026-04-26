@@ -2252,6 +2252,9 @@ async def usda_barcode_lookup(
         raise HTTPException(status_code=502, detail=f"USDA network error: {e}")
 
     foods = data.get("foods", [])
+    # USDA `/foods/search?query=` does fuzzy text matching, so a non-existent UPC
+    # can return unrelated documents. Require an exact gtinUpc match.
+    foods = [f for f in foods if str(f.get("gtinUpc") or "").strip() == barcode]
     if not foods:
         # Fallback: OpenFoodFacts free
         try:
