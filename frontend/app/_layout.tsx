@@ -3,10 +3,12 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
+import { Storage } from '../src/utils/storage';
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const SESSION_KEY = 'trackd_session_token';
 
 interface User {
   user_id: string;
@@ -135,6 +137,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json();
         setUser(data.user);
         setSessionToken(data.session_token);
+        Storage.setItem(SESSION_KEY, data.session_token).catch(() => {});
         if (data.user?.onboarding_complete) {
           router.replace('/(auth)/dashboard');
         } else {
@@ -167,9 +170,23 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-    
-    checkAuth();
+
+    // Try to load persisted session
+    Storage.getItem(SESSION_KEY).then((token) => {
+      if (token) {
+        setSessionToken(token);
+      } else {
+        checkAuth();
+      }
+    }).catch(() => checkAuth());
   }, []);
+
+  // When sessionToken changes, re-validate it via /api/auth/me
+  useEffect(() => {
+    if (sessionToken) {
+      checkAuth();
+    }
+  }, [sessionToken]);
 
   // Handle navigation based on auth state
   useEffect(() => {
@@ -240,6 +257,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setUser(null);
       setSessionToken(null);
+      Storage.removeItem(SESSION_KEY).catch(() => {});
       router.replace('/');
     }
   };

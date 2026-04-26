@@ -238,6 +238,18 @@ frontend:
         agent: "testing"
         comment: "Frontend testing not performed as per testing agent instructions - only backend testing requested"
 
+  - task: "TRACKD Onboarding Flow (Frontend)"
+    implemented: true
+    working: true
+    file: "frontend/app/onboarding.tsx, frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ Full TRACKD onboarding flow tested end-to-end on preview URL with mobile-first viewport. (1) Login screen branding verified: TRACKD title, 'Train. Eat. Repeat.' subtitle, 'Continue with Google' button, all 3 cyan-icon feature bullets (Strong-style Workout Logger, Smart Macro & TDEE Tracking, Auto PR Detection & 1RM Charts), and no legacy 'Fitness Command Center' text. (2) Auth redirect: with token injected and onboarding_complete=false, navigating to / auto-redirected to /onboarding showing 1/4 progress. (3) Step 1 Basic Info: Name + Male/Female pills + Age/Height/Weight inputs all functional, advanced to 2/4 after fill (Alex, Male, 30, 180, 80). (4) Step 2 Activity: All 5 options visible with multipliers (×1.2, ×1.375, ×1.55, ×1.725, ×1.9), Moderately Active selected with cyan border, advanced to 3/4. (5) Step 3 Goal: All 3 options (Lose Fat red, Maintain yellow, Build Muscle green) visible, Build Muscle selected with green border + checkmark. (6) Step 4 Sport+TDEE Preview: All 8 sports in 2-col grid (Powerlifting, Bodybuilding, CrossFit, Running, Cycling, Team Sports, Martial Arts, General Fitness). After tapping Powerlifting, the live TDEE preview card displayed: 3009 kcal (correct for 30M/80kg/180cm/moderately_active/build_muscle: BMR 1780 + TDEE 2759 + 250 = 3009; review spec said ~3025 assuming age 28 but actual computed value with age 30 is 3009 - matches Mifflin-St Jeor formula perfectly), protein 160g (red), carbs 404g (yellow), fats 84g (green), footer 'BMR 1780 • TDEE 2759 (Mifflin-St Jeor)'. CTA correctly changed to 'Calculate My Targets'. (7) Submit: POST /api/onboarding/complete returned 200, app redirected to /dashboard which displays 'Good Evening, Alex' confirming name persisted. NOTE: Back-navigation chevron is rendered (visible in all step header screenshots) but couldn't be auto-clicked via SVG selector in RN-Web (test-script limitation, not a UI bug); the back() handler is wired correctly in code (onboarding.tsx lines 105-108). No console errors, no failed API calls. All API responses 200."
+
   - task: "TRACKD Onboarding API"
     implemented: true
     working: true
