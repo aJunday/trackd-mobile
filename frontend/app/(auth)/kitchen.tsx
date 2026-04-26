@@ -1,712 +1,414 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
-  Animated,
-  Dimensions,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../_layout';
-import Svg, { Circle, G } from 'react-native-svg';
 
-const ACCENT_COLOR = '#00D4FF';
-const WARNING_COLOR = '#FF8C00';
-const SUCCESS_COLOR = '#00FF87';
+const ACCENT = '#F5A623';
+const ACCENT_RED = '#FF6B35';
+const BG = '#0D0D0F';
+const CARD = '#161618';
+const BORDER = '#222';
+const TEXT_MUTED = '#888';
+const PROTEIN = '#FF6B6B';
+const CARBS = '#FFD166';
+const FATS = '#06D6A0';
+const WATER = '#4FC3F7';
+
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-interface NutritionData {
-  date: string;
-  consumed: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-  };
-  goals: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-  };
-  remaining: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-  };
-  progress: {
-    calories_percent: number;
-    exceeded: boolean;
-  };
-  meals: any[];
+interface Dashboard {
+  consumed: { calories: number; protein: number; carbs: number; fats: number };
+  goals: { calories: number; protein: number; carbs: number; fats: number };
+  remaining: { calories: number; protein: number; carbs: number; fats: number };
+  over_goal: boolean;
+  water_ml: number;
+  water_goal_ml: number;
+  streak_days: number;
+  meal_count: number;
 }
 
-// Circular Progress Ring Component
-function ProgressRing({
-  progress,
-  exceeded,
-  size = 180,
-  strokeWidth = 12,
-}: {
-  progress: number;
-  exceeded: boolean;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const animatedProgress = useRef(new Animated.Value(0)).current;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  useEffect(() => {
-    Animated.timing(animatedProgress, {
-      toValue: Math.min(progress, 100),
-      duration: 1000,
-      useNativeDriver: false,
-    }).start();
-  }, [progress]);
-
-  const strokeDashoffset = animatedProgress.interpolate({
-    inputRange: [0, 100],
-    outputRange: [circumference, 0],
-  });
-
-  const strokeColor = exceeded ? WARNING_COLOR : ACCENT_COLOR;
-
-  return (
-    <View style={{ width: size, height: size }}>
-      <Svg width={size} height={size}>
-        <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
-          {/* Background Circle */}
-          <Circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#1A1A1A"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-          />
-          {/* Progress Circle */}
-          <AnimatedCircle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={strokeColor}
-            strokeWidth={strokeWidth}
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-          />
-        </G>
-      </Svg>
-    </View>
-  );
-}
+const haptic = (t: 'light' | 'success' = 'light') => {
+  if (Platform.OS === 'web') return;
+  if (t === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+};
 
 export default function KitchenScreen() {
-  const { sessionToken, user } = useAuth();
+  const { sessionToken } = useAuth();
   const router = useRouter();
-  const [nutritionData, setNutritionData] = useState<NutritionData | null>(null);
+  const [data, setData] = useState<Dashboard | null>(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const getHeaders = () => {
-    const headers: Record<string, string> = {
+  const apiHeaders = useCallback(
+    () => ({
       'Content-Type': 'application/json',
-    };
-    if (sessionToken) {
-      headers['Authorization'] = `Bearer ${sessionToken}`;
-    }
-    return headers;
-  };
+      Authorization: `Bearer ${sessionToken}`,
+    }),
+    [sessionToken]
+  );
 
-  const fetchNutritionData = async () => {
+  const load = useCallback(async () => {
+    if (!sessionToken) return;
     try {
-      const response = await fetch(`${BACKEND_URL}/api/nutrition/today`, {
-        headers: getHeaders(),
-        credentials: 'include',
+      const res = await fetch(`${BACKEND_URL}/api/nutrition/dashboard`, {
+        headers: apiHeaders(),
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        setNutritionData(data);
-      }
-    } catch (error) {
-      console.error('Error fetching nutrition data:', error);
+      if (res.ok) setData(await res.json());
+    } catch (e) {
+      console.log('load dashboard err', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [sessionToken, apiHeaders]);
 
   useEffect(() => {
-    fetchNutritionData();
-  }, []);
+    load();
+  }, [load]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchNutritionData();
-    setRefreshing(false);
+  const addWater = async (ml: number) => {
+    haptic();
+    try {
+      await fetch(`${BACKEND_URL}/api/nutrition/water`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ ml }),
+      });
+      load();
+    } catch {
+      /* ignore */
+    }
   };
 
-  const getMacroProgress = (consumed: number, goal: number) => {
-    if (goal === 0) return 0;
-    return Math.min(100, (consumed / goal) * 100);
-  };
-
-  const MacroBar = ({
-    label,
-    consumed,
-    goal,
-    color,
-  }: {
-    label: string;
-    consumed: number;
-    goal: number;
-    color: string;
-  }) => {
-    const progress = getMacroProgress(consumed, goal);
-    const remaining = goal - consumed;
-    
-    return (
-      <View style={styles.macroBarContainer}>
-        <View style={styles.macroBarHeader}>
-          <Text style={styles.macroBarLabel}>{label}</Text>
-          <Text style={styles.macroBarValues}>
-            <Text style={{ color }}>{Math.round(consumed)}g</Text>
-            <Text style={styles.macroBarGoal}> / {goal}g</Text>
-          </Text>
-        </View>
-        <View style={styles.macroBarTrack}>
-          <View
-            style={[
-              styles.macroBarFill,
-              { width: `${progress}%`, backgroundColor: color },
-            ]}
-          />
-        </View>
-        <Text style={styles.macroBarRemaining}>
-          {remaining > 0 ? `${Math.round(remaining)}g remaining` : 'Goal reached!'}
-        </Text>
-      </View>
-    );
-  };
-
-  if (!nutritionData) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={ACCENT} />
         </View>
       </SafeAreaView>
     );
   }
 
-  const { consumed, goals, remaining, progress } = nutritionData;
+  if (!data) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <Text style={{ color: '#fff' }}>Could not load dashboard</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const calorieRingColor = data.over_goal ? ACCENT_RED : ACCENT;
+  const calPct = Math.min(100, (data.consumed.calories / data.goals.calories) * 100);
+  const proteinPct = Math.min(100, (data.consumed.protein / data.goals.protein) * 100);
+  const carbsPct = Math.min(100, (data.consumed.carbs / data.goals.carbs) * 100);
+  const fatsPct = Math.min(100, (data.consumed.fats / data.goals.fats) * 100);
+  const waterPct = Math.min(100, (data.water_ml / data.water_goal_ml) * 100);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
+            tintColor={ACCENT}
             refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={ACCENT_COLOR}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
           />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Kitchen Dashboard</Text>
-          <Text style={styles.date}>
-            {new Date().toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </Text>
-        </View>
-
-        {/* Remaining Calories Card with Progress Ring */}
-        <View style={[styles.remainingCard, progress.exceeded && styles.remainingCardExceeded]}>
-          <View style={styles.ringContainer}>
-            <ProgressRing
-              progress={progress.calories_percent}
-              exceeded={progress.exceeded}
-            />
-            <View style={styles.ringContent}>
-              <Text style={[styles.remainingValue, progress.exceeded && styles.remainingValueExceeded]}>
-                {Math.abs(Math.round(remaining.calories))}
-              </Text>
-              <Text style={styles.remainingLabel}>
-                {remaining.calories >= 0 ? 'calories left' : 'over budget'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.consumedSummary}>
-            <View style={styles.consumedItem}>
-              <Text style={styles.consumedValue}>{Math.round(consumed.calories)}</Text>
-              <Text style={styles.consumedLabel}>Consumed</Text>
-            </View>
-            <View style={styles.goalItem}>
-              <Text style={styles.goalValue}>{goals.calories}</Text>
-              <Text style={styles.goalLabel}>Daily Goal</Text>
-            </View>
-          </View>
-
-          {progress.exceeded && (
-            <View style={styles.warningBanner}>
-              <Ionicons name="warning" size={18} color={WARNING_COLOR} />
-              <Text style={styles.warningText}>
-                You've exceeded your daily goal by more than 10%
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Macro Breakdown */}
-        <View style={styles.macrosCard}>
-          <Text style={styles.cardTitle}>Macro Breakdown</Text>
-          <MacroBar
-            label="Protein"
-            consumed={consumed.protein}
-            goal={goals.protein}
-            color="#FF6B6B"
-          />
-          <MacroBar
-            label="Carbs"
-            consumed={consumed.carbs}
-            goal={goals.carbs}
-            color={ACCENT_COLOR}
-          />
-          <MacroBar
-            label="Fats"
-            consumed={consumed.fats}
-            goal={goals.fats}
-            color="#FFE066"
-          />
-        </View>
-
-        {/* AI Chef Button */}
-        <TouchableOpacity
-          style={styles.aiChefButton}
-          onPress={() => router.push('/(auth)/ai-chef')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.aiChefIcon}>
-            <Ionicons name="sparkles" size={24} color="#000000" />
-          </View>
-          <View style={styles.aiChefContent}>
-            <Text style={styles.aiChefTitle}>AI Chef</Text>
-            <Text style={styles.aiChefSubtitle}>
-              Get meal suggestions from your pantry
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.h1}>Today</Text>
+            <Text style={styles.h2}>
+              {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={ACCENT_COLOR} />
-        </TouchableOpacity>
-
-        {/* Today's Meals */}
-        <View style={styles.mealsSection}>
-          <View style={styles.mealsSectionHeader}>
-            <Text style={styles.cardTitle}>Today's Meals</Text>
-            <View style={styles.mealButtons}>
-              <TouchableOpacity
-                style={styles.snapMealButton}
-                onPress={() => router.push('/(auth)/meal-scanner')}
-              >
-                <Ionicons name="camera" size={18} color={ACCENT_COLOR} />
-                <Text style={styles.snapMealText}>Snap</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.addMealButton}
-                onPress={() => router.push('/(auth)/log-meal')}
-              >
-                <Ionicons name="add" size={20} color="#000000" />
-                <Text style={styles.addMealText}>Log</Text>
-              </TouchableOpacity>
+          {data.streak_days > 0 && (
+            <View style={styles.streakChip}>
+              <MaterialCommunityIcons name="fire" size={18} color={ACCENT} />
+              <Text style={styles.streakText}>{data.streak_days} day{data.streak_days > 1 ? 's' : ''}</Text>
             </View>
-          </View>
+          )}
+        </View>
 
-          {nutritionData.meals.length === 0 ? (
-            <View style={styles.emptyMeals}>
-              <Ionicons name="restaurant-outline" size={48} color="#333333" />
-              <Text style={styles.emptyMealsText}>No meals logged today</Text>
-              <Text style={styles.emptyMealsSubtext}>
-                Tap "Log Meal" to start tracking
+        {/* Calorie ring */}
+        <View style={styles.ringCard}>
+          <View style={styles.ringWrap}>
+            <Svg width={180} height={180} viewBox="0 0 100 100">
+              <Circle
+                cx="50"
+                cy="50"
+                r="42"
+                stroke="#222"
+                strokeWidth="8"
+                fill="none"
+              />
+              <Circle
+                cx="50"
+                cy="50"
+                r="42"
+                stroke={calorieRingColor}
+                strokeWidth="8"
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray={`${(calPct / 100) * 264} 264`}
+                transform="rotate(-90 50 50)"
+              />
+            </Svg>
+            <View style={styles.ringCenter}>
+              <Text style={[styles.ringValue, { color: calorieRingColor }]}>
+                {Math.round(data.consumed.calories)}
+              </Text>
+              <Text style={styles.ringLabel}>of {data.goals.calories} kcal</Text>
+              <Text style={[styles.ringRem, { color: data.over_goal ? ACCENT_RED : '#bbb' }]}>
+                {data.over_goal
+                  ? `+${data.consumed.calories - data.goals.calories} over`
+                  : `${data.remaining.calories} left`}
               </Text>
             </View>
-          ) : (
-            nutritionData.meals.map((meal, index) => (
-              <View key={meal.meal_id || index} style={styles.mealCard}>
-                <View style={styles.mealHeader}>
-                  <View style={styles.mealType}>
-                    <Ionicons
-                      name={
-                        meal.meal_type === 'breakfast'
-                          ? 'sunny-outline'
-                          : meal.meal_type === 'lunch'
-                          ? 'partly-sunny-outline'
-                          : meal.meal_type === 'dinner'
-                          ? 'moon-outline'
-                          : 'cafe-outline'
-                      }
-                      size={20}
-                      color={ACCENT_COLOR}
-                    />
-                    <Text style={styles.mealTypeName}>
-                      {meal.meal_type.charAt(0).toUpperCase() + meal.meal_type.slice(1)}
-                    </Text>
-                  </View>
-                  <Text style={styles.mealCalories}>{Math.round(meal.total_calories)} cal</Text>
-                </View>
-                <View style={styles.mealMacros}>
-                  <Text style={styles.mealMacro}>P: {Math.round(meal.total_protein)}g</Text>
-                  <Text style={styles.mealMacro}>C: {Math.round(meal.total_carbs)}g</Text>
-                  <Text style={styles.mealMacro}>F: {Math.round(meal.total_fats)}g</Text>
-                </View>
+          </View>
+        </View>
+
+        {/* Macros */}
+        <Text style={styles.section}>Macros</Text>
+        <MacroBar
+          label="Protein"
+          color={PROTEIN}
+          consumed={data.consumed.protein}
+          goal={data.goals.protein}
+          pct={proteinPct}
+        />
+        <MacroBar
+          label="Carbs"
+          color={CARBS}
+          consumed={data.consumed.carbs}
+          goal={data.goals.carbs}
+          pct={carbsPct}
+        />
+        <MacroBar
+          label="Fats"
+          color={FATS}
+          consumed={data.consumed.fats}
+          goal={data.goals.fats}
+          pct={fatsPct}
+        />
+
+        {/* Water */}
+        <Text style={[styles.section, { marginTop: 24 }]}>Water</Text>
+        <View style={styles.waterCard}>
+          <View style={styles.waterRow}>
+            <Ionicons name="water" size={28} color={WATER} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.waterValue}>
+                {data.water_ml} <Text style={styles.waterGoal}>/ {data.water_goal_ml} ml</Text>
+              </Text>
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, { width: `${waterPct}%`, backgroundColor: WATER }]} />
               </View>
-            ))
-          )}
+            </View>
+          </View>
+          <View style={styles.waterBtns}>
+            {[250, 500, 750].map((ml) => (
+              <TouchableOpacity key={ml} style={styles.waterBtn} onPress={() => addWater(ml)}>
+                <Text style={styles.waterBtnText}>+{ml}ml</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
+        <Text style={[styles.section, { marginTop: 24 }]}>Log a meal</Text>
+        <View style={styles.actionsGrid}>
+          <ActionTile
+            icon="camera"
+            label="Snap & Log"
+            sub="Gemini AI"
+            onPress={() => router.push('/(auth)/meal-scanner')}
+          />
+          <ActionTile
+            icon="restaurant"
+            label="Manual"
+            sub="Add by name"
+            onPress={() => router.push('/(auth)/log-meal')}
+          />
+          <ActionTile
+            icon="basket"
+            label="Pantry"
+            sub="From inventory"
             onPress={() => router.push('/(auth)/pantry')}
-          >
-            <Ionicons name="basket-outline" size={24} color={ACCENT_COLOR} />
-            <Text style={styles.actionText}>View Pantry</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => router.push('/(auth)/goals')}
-          >
-            <Ionicons name="settings-outline" size={24} color={ACCENT_COLOR} />
-            <Text style={styles.actionText}>Edit Goals</Text>
-          </TouchableOpacity>
+          />
+          <ActionTile
+            icon="sparkles"
+            label="AI Chef"
+            sub="Get a recipe"
+            onPress={() => router.push('/(auth)/ai-chef')}
+          />
         </View>
+
+        {data.meal_count > 0 && (
+          <Text style={styles.meta}>
+            ✓ Logged {data.meal_count} meal{data.meal_count > 1 ? 's' : ''} today
+          </Text>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function MacroBar({
+  label,
+  color,
+  consumed,
+  goal,
+  pct,
+}: {
+  label: string;
+  color: string;
+  consumed: number;
+  goal: number;
+  pct: number;
+}) {
+  return (
+    <View style={styles.macroCard}>
+      <View style={styles.macroHead}>
+        <Text style={[styles.macroLabel, { color }]}>{label}</Text>
+        <Text style={styles.macroNum}>
+          {Math.round(consumed)}
+          <Text style={styles.macroGoal}> / {goal}g</Text>
+        </Text>
+      </View>
+      <View style={styles.barTrack}>
+        <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: color }]} />
+      </View>
+    </View>
+  );
+}
+
+function ActionTile({
+  icon,
+  label,
+  sub,
+  onPress,
+}: {
+  icon: any;
+  label: string;
+  sub: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.tile} onPress={onPress}>
+      <Ionicons name={icon} size={22} color={ACCENT} />
+      <Text style={styles.tileLabel}>{label}</Text>
+      <Text style={styles.tileSub}>{sub}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  container: { flex: 1, backgroundColor: BG },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { padding: 16, paddingBottom: 64 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 18,
   },
-  loadingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  h1: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: 0.5 },
+  h2: { color: TEXT_MUTED, fontSize: 13, marginTop: 2 },
+  streakChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(245,166,35,0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: ACCENT,
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  date: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 4,
-  },
-  remainingCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 20,
+  streakText: { color: ACCENT, fontWeight: '800', fontSize: 13 },
+  ringCard: {
+    backgroundColor: CARD,
+    borderRadius: 18,
     padding: 24,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: ACCENT_COLOR,
-    alignItems: 'center',
-  },
-  remainingCardExceeded: {
-    borderColor: WARNING_COLOR,
-  },
-  ringContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  ringContent: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  remainingValue: {
-    fontSize: 42,
-    fontWeight: '700',
-    color: ACCENT_COLOR,
-  },
-  remainingValueExceeded: {
-    color: WARNING_COLOR,
-  },
-  remainingLabel: {
-    fontSize: 14,
-    color: '#888888',
-    marginTop: 4,
-  },
-  consumedSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-  },
-  consumedItem: {
-    alignItems: 'center',
-  },
-  consumedValue: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  consumedLabel: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  goalItem: {
-    alignItems: 'center',
-  },
-  goalValue: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  goalLabel: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 140, 0, 0.1)',
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 16,
-    width: '100%',
-    gap: 8,
-  },
-  warningText: {
-    fontSize: 13,
-    color: WARNING_COLOR,
-    flex: 1,
-  },
-  macrosCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#1A1A1A',
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 16,
-  },
-  macroBarContainer: {
-    marginBottom: 16,
-  },
-  macroBarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  macroBarLabel: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '500',
-  },
-  macroBarValues: {
-    fontSize: 14,
-  },
-  macroBarGoal: {
-    color: '#666666',
-  },
-  macroBarTrack: {
-    height: 8,
-    backgroundColor: '#1A1A1A',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  macroBarFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  macroBarRemaining: {
-    fontSize: 12,
-    color: '#666666',
-    marginTop: 4,
-  },
-  mealsSection: {
-    marginBottom: 20,
-  },
-  mealsSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  mealButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  snapMealButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: ACCENT_COLOR,
-  },
-  snapMealText: {
-    color: ACCENT_COLOR,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  addMealButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: ACCENT_COLOR,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 4,
-  },
-  addMealText: {
-    color: '#000000',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  emptyMeals: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 16,
-    padding: 40,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1A1A1A',
-  },
-  emptyMealsText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginTop: 12,
-  },
-  emptyMealsSubtext: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 4,
-  },
-  mealCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#1A1A1A',
-  },
-  mealHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    borderColor: BORDER,
     marginBottom: 8,
   },
-  mealType: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  mealTypeName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  mealCalories: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: ACCENT_COLOR,
-  },
-  mealMacros: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  mealMacro: {
-    fontSize: 13,
-    color: '#888888',
-  },
-  aiChefButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0A0A0A',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: ACCENT_COLOR,
-  },
-  aiChefIcon: {
-    width: 48,
-    height: 48,
+  ringWrap: { justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  ringCenter: { position: 'absolute', alignItems: 'center' },
+  ringValue: { fontSize: 36, fontWeight: '900' },
+  ringLabel: { color: TEXT_MUTED, fontSize: 12, marginTop: 2 },
+  ringRem: { fontSize: 13, fontWeight: '700', marginTop: 6 },
+  section: { color: '#fff', fontSize: 16, fontWeight: '800', marginBottom: 10, marginTop: 16 },
+  macroCard: {
+    backgroundColor: CARD,
     borderRadius: 12,
-    backgroundColor: ACCENT_COLOR,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  aiChefContent: {
+  macroHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  macroLabel: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
+  macroNum: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  macroGoal: { color: TEXT_MUTED, fontWeight: '600' },
+  barTrack: { height: 8, backgroundColor: '#1F1F1F', borderRadius: 4, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 4 },
+  waterCard: {
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  waterRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  waterValue: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  waterGoal: { color: TEXT_MUTED, fontSize: 13, fontWeight: '600' },
+  waterBtns: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  waterBtn: {
     flex: 1,
-  },
-  aiChefTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  aiChefSubtitle: {
-    fontSize: 13,
-    color: '#888888',
-    marginTop: 2,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  actionButton: {
-    flexDirection: 'row',
+    backgroundColor: 'rgba(79,195,247,0.12)',
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
-    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(79,195,247,0.3)',
   },
-  actionText: {
-    color: ACCENT_COLOR,
-    fontWeight: '500',
-    fontSize: 14,
+  waterBtnText: { color: WATER, fontWeight: '800', fontSize: 13 },
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tile: {
+    width: '48%',
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 6,
   },
+  tileLabel: { color: '#fff', fontSize: 14, fontWeight: '800', marginTop: 6 },
+  tileSub: { color: TEXT_MUTED, fontSize: 11 },
+  meta: { color: TEXT_MUTED, fontSize: 12, marginTop: 16, textAlign: 'center' },
 });

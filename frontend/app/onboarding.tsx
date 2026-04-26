@@ -18,9 +18,10 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useAuth } from './_layout';
 
-const ACCENT = '#00D4FF';
-const CARD_BG = '#0F0F0F';
-const BORDER = '#1F1F1F';
+const ACCENT = '#F5A623';
+const CARD_BG = '#161618';
+const BORDER = '#222';
+const BG_DARK = '#0D0D0F';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 

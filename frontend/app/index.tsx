@@ -11,7 +11,7 @@ import {
 import { useAuth } from './_layout';
 import { Ionicons } from '@expo/vector-icons';
 
-const ACCENT_COLOR = '#00D4FF';
+const ACCENT_COLOR = '#F5A623';
 
 export default function LoginScreen() {
   const { login, isLoading } = useAuth();
@@ -36,12 +36,14 @@ export default function LoginScreen() {
 
         {/* Title */}
         <Text style={styles.title}>TRACKD</Text>
-        <Text style={styles.subtitle}>Train. Eat. Repeat.</Text>
+        <View style={styles.goldLine} />
+        <Text style={styles.subtitle}>Track everything. Gain everything.</Text>
 
         {/* Tagline */}
         <Text style={styles.tagline}>
-          Your personal training & nutrition OS.
-          {"\n"}Every set. Every macro. Every day.
+          Log every rep.
+          {"\n"}Scan every meal.
+          {"\n"}Built on real science.
         </Text>
 
         {/* Features */}
@@ -115,11 +117,20 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   subtitle: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: ACCENT_COLOR,
-    marginBottom: 16,
-    letterSpacing: 1,
+    marginBottom: 24,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  goldLine: {
+    width: 80,
+    height: 3,
+    backgroundColor: ACCENT_COLOR,
+    borderRadius: 2,
+    marginTop: 8,
+    marginBottom: 14,
   },
   tagline: {
     fontSize: 16,

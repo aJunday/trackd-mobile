@@ -1,11 +1,11 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { Platform, View, StyleSheet } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Platform } from 'react-native';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
-const BACKGROUND_COLOR = '#000000';
+const ACCENT = '#F5A623';
+const BG = '#0D0D0F';
 const TAB_BAR_BG = '#0A0A0A';
 
 export default function AuthLayout() {
@@ -25,13 +25,13 @@ export default function AuthLayout() {
           borderTopWidth: 1,
           height: Platform.OS === 'ios' ? 88 : 64,
           paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-          paddingTop: 8,
+          paddingTop: 6,
         },
-        tabBarActiveTintColor: ACCENT_COLOR,
+        tabBarActiveTintColor: ACCENT,
         tabBarInactiveTintColor: '#666666',
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
+          fontSize: 11,
+          fontWeight: '600',
         },
       }}
     >
@@ -49,7 +49,16 @@ export default function AuthLayout() {
         options={{
           title: 'Workout',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="barbell" size={size} color={color} />
+            <MaterialCommunityIcons name="dumbbell" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="programs"
+        options={{
+          title: 'Programs',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trophy" size={size} color={color} />
           ),
         }}
       />
@@ -63,15 +72,6 @@ export default function AuthLayout() {
         }}
       />
       <Tabs.Screen
-        name="history"
-        options={{
-          title: 'History',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
@@ -80,49 +80,15 @@ export default function AuthLayout() {
           ),
         }}
       />
-      {/* Hidden screens - accessible via navigation but not in tab bar */}
-      <Tabs.Screen
-        name="goals"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="log-meal"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="pantry"
-        options={{
-          href: null, // Hide from tab bar - accessed from Kitchen
-        }}
-      />
-      <Tabs.Screen
-        name="scanner"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="add-pantry-item"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="ai-chef"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
-      <Tabs.Screen
-        name="meal-scanner"
-        options={{
-          href: null, // Hide from tab bar
-        }}
-      />
+      {/* Hidden screens */}
+      <Tabs.Screen name="goals" options={{ href: null }} />
+      <Tabs.Screen name="log-meal" options={{ href: null }} />
+      <Tabs.Screen name="pantry" options={{ href: null }} />
+      <Tabs.Screen name="scanner" options={{ href: null }} />
+      <Tabs.Screen name="add-pantry-item" options={{ href: null }} />
+      <Tabs.Screen name="ai-chef" options={{ href: null }} />
+      <Tabs.Screen name="meal-scanner" options={{ href: null }} />
+      <Tabs.Screen name="history" options={{ href: null }} />
     </Tabs>
   );
 }

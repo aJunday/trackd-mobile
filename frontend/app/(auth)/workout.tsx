@@ -3,1049 +3,1486 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
+  ScrollView,
   TextInput,
-  SafeAreaView,
-  Alert,
   Modal,
-  Platform,
-  KeyboardAvoidingView,
+  FlatList,
+  ActivityIndicator,
   Animated,
+  Platform,
+  Alert,
+  KeyboardAvoidingView,
+  Pressable,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
-const SUCCESS_COLOR = '#00FF87';
-const BACKGROUND_COLOR = '#000000';
-const CARD_BG = '#0A0A0A';
-const BORDER_COLOR = '#1A1A1A';
+const ACCENT = '#F5A623';
+const GOLD = '#F5A623';
+const PR_ORANGE = '#FF6B35';
+const BG = '#0D0D0F';
+const CARD = '#161618';
+const BORDER = '#222';
+const TEXT_MUTED = '#888';
+
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
-interface SetData {
+// ============== TYPES ==============
+interface SetEntry {
+  id: string;
   set_number: number;
   weight: number;
   reps: number;
-  rpe?: number;
   completed: boolean;
-  completed_at?: string;
+  is_pr?: boolean;
+  one_rm?: number;
 }
-
-interface Exercise {
-  exercise_id: string;
+interface ExerciseEntry {
+  id: string;
   exercise_name: string;
-  sets: SetData[];
+  muscle_group?: string;
+  sets: SetEntry[];
   notes?: string;
-  order: number;
+  prev?: { weight: number; reps: number } | null;
 }
-
-interface Workout {
-  workout_id: string;
+interface ActiveWorkout {
+  workout_id?: string;
   name: string;
-  exercises: Exercise[];
-  started_at: string;
-  completed_at?: string;
+  start_time: number; // ms
+  exercises: ExerciseEntry[];
 }
-
-interface PreviousExercise {
+interface Template {
+  template_id: string;
+  name: string;
+  is_preset?: boolean;
+  exercises: { exercise_name: string; sets: number }[];
+}
+interface PR {
+  pr_id: string;
   exercise_name: string;
-  sets: SetData[];
-  workout_date: string;
-  workout_name: string;
+  weight: number;
+  reps: number;
+  one_rm: number;
+  achieved_at: string;
 }
 
+// ============== HELPERS ==============
+const fmtDur = (ms: number) => {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+const epley = (w: number, r: number) => +(w * (1 + r / 30)).toFixed(1);
+const haptic = (type: 'light' | 'medium' | 'heavy' | 'success' | 'warn' = 'light') => {
+  if (Platform.OS === 'web') return;
+  if (type === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  else if (type === 'warn') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  else
+    Haptics.impactAsync(
+      type === 'heavy'
+        ? Haptics.ImpactFeedbackStyle.Heavy
+        : type === 'medium'
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light
+    );
+};
+
+// Plate calc utility
+const PLATES_KG = [25, 20, 15, 10, 5, 2.5, 1.25];
+const PLATE_COLORS: Record<number, string> = {
+  25: '#E94B3C',
+  20: '#1668DC',
+  15: '#FFD60A',
+  10: '#43A047',
+  5: '#F5F5F5',
+  2.5: '#1A1A1A',
+  1.25: '#777',
+};
+function calcPlates(weight: number, bar = 20) {
+  if (weight < bar) return { perSide: [], remainder: 0 };
+  const perSideWeight = (weight - bar) / 2;
+  let remaining = perSideWeight;
+  const perSide: number[] = [];
+  for (const p of PLATES_KG) {
+    while (remaining >= p - 0.001) {
+      perSide.push(p);
+      remaining -= p;
+    }
+  }
+  return { perSide, remainder: +remaining.toFixed(2) };
+}
+
+// ============== MAIN ==============
 export default function WorkoutScreen() {
   const { sessionToken } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const workoutId = params.id as string | undefined;
+  const insets = useSafeAreaInsets();
 
-  const [workout, setWorkout] = useState<Workout | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showExerciseModal, setShowExerciseModal] = useState(false);
-  const [exerciseSearch, setExerciseSearch] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [previousData, setPreviousData] = useState<Record<string, PreviousExercise | null>>({});
-  
-  // Rest Timer State
-  const [restTimerActive, setRestTimerActive] = useState(false);
-  const [restTime, setRestTime] = useState(90); // Default 90 seconds
-  const [currentRestTime, setCurrentRestTime] = useState(90);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const timerAnimation = useRef(new Animated.Value(1)).current;
+  const [active, setActive] = useState<ActiveWorkout | null>(null);
+  const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<{ presets: Template[]; user_templates: Template[] }>({
+    presets: [],
+    user_templates: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(Date.now());
 
-  const getHeaders = useCallback(() => {
-    const headers: Record<string, string> = {
+  // Modals
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [showPlateCalc, setShowPlateCalc] = useState<{ open: boolean; weight: number }>({
+    open: false,
+    weight: 100,
+  });
+  const [restTimer, setRestTimer] = useState<{ active: boolean; secs: number; total: number }>({
+    active: false,
+    secs: 0,
+    total: 0,
+  });
+  const [prToast, setPrToast] = useState<{ visible: boolean; exerciseName: string; oneRm: number }>(
+    { visible: false, exerciseName: '', oneRm: 0 }
+  );
+
+  const apiHeaders = useCallback(
+    () => ({
       'Content-Type': 'application/json',
-    };
-    if (sessionToken) {
-      headers['Authorization'] = `Bearer ${sessionToken}`;
+      Authorization: `Bearer ${sessionToken}`,
+    }),
+    [sessionToken]
+  );
+
+  // Tick clock for elapsed time
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  // Rest timer countdown
+  useEffect(() => {
+    if (!restTimer.active) return;
+    if (restTimer.secs <= 0) {
+      haptic('success');
+      setRestTimer({ active: false, secs: 0, total: 0 });
+      return;
     }
-    return headers;
+    const id = setTimeout(() => setRestTimer((p) => ({ ...p, secs: p.secs - 1 })), 1000);
+    return () => clearTimeout(id);
+  }, [restTimer]);
+
+  // Load initial
+  useEffect(() => {
+    if (!sessionToken) return;
+    loadInitial();
   }, [sessionToken]);
 
-  // Fetch or create workout
-  useEffect(() => {
-    const initWorkout = async () => {
-      try {
-        if (workoutId) {
-          // Fetch existing workout
-          const response = await fetch(
-            `${BACKEND_URL}/api/workouts/${workoutId}`,
-            { headers: getHeaders(), credentials: 'include' }
-          );
-          if (response.ok) {
-            const data = await response.json();
-            setWorkout(data);
-          }
-        } else {
-          // Create new workout
-          const response = await fetch(`${BACKEND_URL}/api/workouts`, {
-            method: 'POST',
-            headers: getHeaders(),
-            credentials: 'include',
-            body: JSON.stringify({ name: 'Workout' }),
+  const loadInitial = async () => {
+    setLoading(true);
+    try {
+      const [recRes, tmplRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/workouts`, { headers: apiHeaders() }),
+        fetch(`${BACKEND_URL}/api/templates`, { headers: apiHeaders() }),
+      ]);
+      if (recRes.ok) {
+        const all = await recRes.json();
+        const completed = (all || [])
+          .filter((w: any) => w.status === 'completed' || w.completed_at)
+          .slice(0, 5);
+        const inProgress = (all || []).find((w: any) => w.status === 'in_progress');
+        setRecentWorkouts(completed);
+        if (inProgress && !active) {
+          // resume in-progress workout
+          setActive({
+            workout_id: inProgress.workout_id,
+            name: inProgress.name || 'Workout',
+            start_time: new Date(inProgress.started_at || inProgress.start_time || Date.now()).getTime(),
+            exercises: (inProgress.exercises || []).map((ex: any, i: number) => ({
+              id: `e_${i}_${Date.now()}`,
+              exercise_name: ex.exercise_name,
+              muscle_group: ex.muscle_group,
+              sets: (ex.sets || []).map((s: any, si: number) => ({
+                id: `s_${i}_${si}`,
+                set_number: s.set_number ?? si + 1,
+                weight: s.weight || 0,
+                reps: s.reps || 0,
+                completed: !!s.completed,
+              })),
+            })),
           });
-          if (response.ok) {
-            const data = await response.json();
-            setWorkout(data);
-          }
         }
-      } catch (error) {
-        console.error('Error initializing workout:', error);
-      } finally {
-        setIsLoading(false);
       }
-    };
-
-    initWorkout();
-  }, [workoutId, getHeaders]);
-
-  // Fetch exercise suggestions
-  const fetchSuggestions = async (query: string) => {
-    try {
-      const response = await fetch(
-        `${BACKEND_URL}/api/exercises/suggestions?q=${encodeURIComponent(query)}`,
-        { headers: getHeaders(), credentials: 'include' }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setSuggestions(data.suggestions || []);
+      if (tmplRes.ok) {
+        const t = await tmplRes.json();
+        setTemplates({ presets: t.presets || [], user_templates: t.user_templates || [] });
       }
-    } catch (error) {
-      console.error('Error fetching suggestions:', error);
+    } catch (e) {
+      console.log('loadInitial err', e);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchSuggestions(exerciseSearch);
-  }, [exerciseSearch]);
-
-  // Fetch previous exercise data (Copy Previous feature)
-  const fetchPreviousData = async (exerciseName: string) => {
-    if (previousData[exerciseName] !== undefined) return;
-    
+  // ---------- Workout lifecycle ----------
+  const startEmptyWorkout = async () => {
+    haptic('medium');
+    const name = `Workout ${new Date().toLocaleDateString(undefined, { weekday: 'short' })}`;
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/api/exercises/history/${encodeURIComponent(exerciseName)}`,
-        { headers: getHeaders(), credentials: 'include' }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setPreviousData(prev => ({
-          ...prev,
-          [exerciseName]: data.previous,
+      const res = await fetch(`${BACKEND_URL}/api/workouts`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ name, exercises: [], status: 'in_progress' }),
+      });
+      const data = await res.json();
+      setActive({
+        workout_id: data.workout_id,
+        name,
+        start_time: Date.now(),
+        exercises: [],
+      });
+    } catch {
+      // local-only fallback
+      setActive({ name, start_time: Date.now(), exercises: [] });
+    }
+  };
+
+  const startFromTemplate = async (tmpl: Template) => {
+    haptic('medium');
+    const exercises: ExerciseEntry[] = await Promise.all(
+      tmpl.exercises.map(async (te, i) => {
+        // Fetch previous best for each exercise
+        let prev = null;
+        try {
+          const r = await fetch(
+            `${BACKEND_URL}/api/exercises/history/${encodeURIComponent(te.exercise_name)}`,
+            { headers: apiHeaders() }
+          );
+          if (r.ok) {
+            const data = await r.json();
+            if (data && data.weight) prev = { weight: data.weight, reps: data.reps };
+          }
+        } catch {
+          /* ignore */
+        }
+        const sets: SetEntry[] = Array.from({ length: te.sets || 3 }, (_, j) => ({
+          id: `s_${i}_${j}_${Date.now()}`,
+          set_number: j + 1,
+          weight: prev?.weight || 0,
+          reps: prev?.reps || 0,
+          completed: false,
         }));
-      }
-    } catch (error) {
-      console.error('Error fetching previous data:', error);
-    }
-  };
-
-  // Save workout to backend
-  const saveWorkout = async (updatedWorkout: Workout) => {
-    if (!updatedWorkout.workout_id) return;
-    
+        return {
+          id: `e_${i}_${Date.now()}`,
+          exercise_name: te.exercise_name,
+          sets,
+          prev,
+        };
+      })
+    );
     try {
-      await fetch(`${BACKEND_URL}/api/workouts/${updatedWorkout.workout_id}`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        credentials: 'include',
+      const res = await fetch(`${BACKEND_URL}/api/workouts`, {
+        method: 'POST',
+        headers: apiHeaders(),
         body: JSON.stringify({
-          name: updatedWorkout.name,
-          exercises: updatedWorkout.exercises,
+          name: tmpl.name,
+          exercises: exercises.map((e) => ({
+            exercise_name: e.exercise_name,
+            sets: e.sets.map((s) => ({ ...s })),
+          })),
+          status: 'in_progress',
         }),
       });
-    } catch (error) {
-      console.error('Error saving workout:', error);
-    }
-  };
-
-  // Add exercise
-  const addExercise = (exerciseName: string) => {
-    if (!workout) return;
-
-    const newExercise: Exercise = {
-      exercise_id: `ex_${Date.now()}`,
-      exercise_name: exerciseName,
-      sets: [
-        { set_number: 1, weight: 0, reps: 0, completed: false },
-        { set_number: 2, weight: 0, reps: 0, completed: false },
-        { set_number: 3, weight: 0, reps: 0, completed: false },
-      ],
-      order: workout.exercises.length,
-    };
-
-    const updatedWorkout = {
-      ...workout,
-      exercises: [...workout.exercises, newExercise],
-    };
-
-    setWorkout(updatedWorkout);
-    saveWorkout(updatedWorkout);
-    fetchPreviousData(exerciseName);
-    setShowExerciseModal(false);
-    setExerciseSearch('');
-  };
-
-  // Add set to exercise
-  const addSet = (exerciseId: string) => {
-    if (!workout) return;
-
-    const updatedWorkout = {
-      ...workout,
-      exercises: workout.exercises.map(ex => {
-        if (ex.exercise_id === exerciseId) {
-          const lastSet = ex.sets[ex.sets.length - 1];
-          return {
-            ...ex,
-            sets: [
-              ...ex.sets,
-              {
-                set_number: ex.sets.length + 1,
-                weight: lastSet?.weight || 0,
-                reps: lastSet?.reps || 0,
-                completed: false,
-              },
-            ],
-          };
-        }
-        return ex;
-      }),
-    };
-
-    setWorkout(updatedWorkout);
-    saveWorkout(updatedWorkout);
-  };
-
-  // Update set
-  const updateSet = (
-    exerciseId: string,
-    setIndex: number,
-    field: 'weight' | 'reps',
-    value: string
-  ) => {
-    if (!workout) return;
-
-    const numValue = parseFloat(value) || 0;
-
-    const updatedWorkout = {
-      ...workout,
-      exercises: workout.exercises.map(ex => {
-        if (ex.exercise_id === exerciseId) {
-          return {
-            ...ex,
-            sets: ex.sets.map((set, idx) => {
-              if (idx === setIndex) {
-                return { ...set, [field]: numValue };
-              }
-              return set;
-            }),
-          };
-        }
-        return ex;
-      }),
-    };
-
-    setWorkout(updatedWorkout);
-    // Debounced save
-    saveWorkout(updatedWorkout);
-  };
-
-  // Complete set with haptic feedback and rest timer
-  const completeSet = (exerciseId: string, setIndex: number) => {
-    if (!workout) return;
-
-    // Trigger haptic feedback
-    if (Platform.OS !== 'web') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-
-    const updatedWorkout = {
-      ...workout,
-      exercises: workout.exercises.map(ex => {
-        if (ex.exercise_id === exerciseId) {
-          return {
-            ...ex,
-            sets: ex.sets.map((set, idx) => {
-              if (idx === setIndex) {
-                return {
-                  ...set,
-                  completed: !set.completed,
-                  completed_at: !set.completed ? new Date().toISOString() : undefined,
-                };
-              }
-              return set;
-            }),
-          };
-        }
-        return ex;
-      }),
-    };
-
-    setWorkout(updatedWorkout);
-    saveWorkout(updatedWorkout);
-
-    // Start rest timer if completing set
-    const exercise = workout.exercises.find(e => e.exercise_id === exerciseId);
-    const set = exercise?.sets[setIndex];
-    if (!set?.completed) {
-      startRestTimer();
-    }
-  };
-
-  // Copy previous data
-  const copyPrevious = (exercise: Exercise) => {
-    const previous = previousData[exercise.exercise_name];
-    if (!previous || !workout) return;
-
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-
-    const updatedWorkout = {
-      ...workout,
-      exercises: workout.exercises.map(ex => {
-        if (ex.exercise_id === exercise.exercise_id) {
-          return {
-            ...ex,
-            sets: previous.sets.map((prevSet, idx) => ({
-              set_number: idx + 1,
-              weight: prevSet.weight,
-              reps: prevSet.reps,
-              rpe: prevSet.rpe,
-              completed: false,
-            })),
-          };
-        }
-        return ex;
-      }),
-    };
-
-    setWorkout(updatedWorkout);
-    saveWorkout(updatedWorkout);
-  };
-
-  // Rest timer functions
-  const startRestTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    setCurrentRestTime(restTime);
-    setRestTimerActive(true);
-    timerAnimation.setValue(1);
-
-    Animated.timing(timerAnimation, {
-      toValue: 0,
-      duration: restTime * 1000,
-      useNativeDriver: false,
-    }).start();
-
-    timerRef.current = setInterval(() => {
-      setCurrentRestTime(prev => {
-        if (prev <= 1) {
-          stopRestTimer();
-          if (Platform.OS !== 'web') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          }
-          return 0;
-        }
-        return prev - 1;
+      const data = await res.json();
+      setActive({
+        workout_id: data.workout_id,
+        name: tmpl.name,
+        start_time: Date.now(),
+        exercises,
       });
-    }, 1000);
-  };
-
-  const stopRestTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+    } catch {
+      setActive({ name: tmpl.name, start_time: Date.now(), exercises });
     }
-    setRestTimerActive(false);
+    setShowTemplatesModal(false);
   };
 
-  const adjustRestTime = (delta: number) => {
-    const newTime = Math.max(15, Math.min(300, restTime + delta));
-    setRestTime(newTime);
-    if (restTimerActive) {
-      setCurrentRestTime(prev => Math.max(0, prev + delta));
-    }
-  };
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, []);
-
-  // Delete exercise
-  const deleteExercise = (exerciseId: string) => {
-    if (!workout) return;
-
-    Alert.alert(
-      'Delete Exercise',
-      'Are you sure you want to delete this exercise?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            const updatedWorkout = {
-              ...workout,
-              exercises: workout.exercises.filter(ex => ex.exercise_id !== exerciseId),
-            };
-            setWorkout(updatedWorkout);
-            saveWorkout(updatedWorkout);
-          },
-        },
-      ]
-    );
-  };
-
-  // Finish workout
-  const finishWorkout = async () => {
-    if (!workout) return;
-
-    Alert.alert(
-      'Finish Workout',
-      'Are you sure you want to finish this workout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Finish',
-          onPress: async () => {
-            try {
-              await fetch(
-                `${BACKEND_URL}/api/workouts/${workout.workout_id}/complete`,
-                {
-                  method: 'POST',
-                  headers: getHeaders(),
-                  credentials: 'include',
-                }
-              );
-              
-              if (Platform.OS !== 'web') {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              }
-              
-              router.replace('/(auth)/dashboard');
-            } catch (error) {
-              console.error('Error finishing workout:', error);
+  const finishWorkout = () => {
+    if (!active) return;
+    Alert.alert('Finish Workout?', 'This will save your session and clear the timer.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Finish',
+        style: 'destructive',
+        onPress: async () => {
+          haptic('success');
+          try {
+            if (active.workout_id) {
+              await fetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
+                method: 'PUT',
+                headers: apiHeaders(),
+                body: JSON.stringify({
+                  exercises: active.exercises.map((ex) => ({
+                    exercise_name: ex.exercise_name,
+                    sets: ex.sets.map((s) => ({
+                      set_number: s.set_number,
+                      weight: s.weight,
+                      reps: s.reps,
+                      completed: s.completed,
+                    })),
+                  })),
+                }),
+              });
+              await fetch(`${BACKEND_URL}/api/workouts/${active.workout_id}/complete`, {
+                method: 'POST',
+                headers: apiHeaders(),
+              });
             }
-          },
+          } catch (e) {
+            console.log('finish err', e);
+          }
+          setActive(null);
+          setRestTimer({ active: false, secs: 0, total: 0 });
+          loadInitial();
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const cancelWorkout = () => {
+    Alert.alert('Cancel Workout?', 'You will lose this session.', [
+      { text: 'Keep going', style: 'cancel' },
+      {
+        text: 'Cancel',
+        style: 'destructive',
+        onPress: async () => {
+          if (active?.workout_id) {
+            try {
+              await fetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
+                method: 'DELETE',
+                headers: apiHeaders(),
+              });
+            } catch {
+              /* ignore */
+            }
+          }
+          setActive(null);
+        },
+      },
+    ]);
   };
 
-  if (isLoading) {
+  // ---------- Exercise / Set ops ----------
+  const addExercise = async (name: string, muscle_group?: string) => {
+    if (!active) return;
+    let prev = null;
+    try {
+      const r = await fetch(
+        `${BACKEND_URL}/api/exercises/history/${encodeURIComponent(name)}`,
+        { headers: apiHeaders() }
+      );
+      if (r.ok) {
+        const data = await r.json();
+        if (data && data.weight) prev = { weight: data.weight, reps: data.reps };
+      }
+    } catch {
+      /* ignore */
+    }
+    const id = `e_${Date.now()}`;
+    setActive({
+      ...active,
+      exercises: [
+        ...active.exercises,
+        {
+          id,
+          exercise_name: name,
+          muscle_group,
+          prev,
+          sets: [
+            {
+              id: `s_${id}_0`,
+              set_number: 1,
+              weight: prev?.weight || 0,
+              reps: prev?.reps || 0,
+              completed: false,
+            },
+          ],
+        },
+      ],
+    });
+    setShowExercisePicker(false);
+  };
+
+  const removeExercise = (eid: string) => {
+    if (!active) return;
+    haptic('light');
+    setActive({ ...active, exercises: active.exercises.filter((e) => e.id !== eid) });
+  };
+
+  const addSet = (eid: string) => {
+    if (!active) return;
+    haptic('light');
+    setActive({
+      ...active,
+      exercises: active.exercises.map((ex) => {
+        if (ex.id !== eid) return ex;
+        const lastSet = ex.sets[ex.sets.length - 1];
+        return {
+          ...ex,
+          sets: [
+            ...ex.sets,
+            {
+              id: `s_${eid}_${ex.sets.length}_${Date.now()}`,
+              set_number: ex.sets.length + 1,
+              weight: lastSet?.weight || 0,
+              reps: lastSet?.reps || 0,
+              completed: false,
+            },
+          ],
+        };
+      }),
+    });
+  };
+
+  const removeSet = (eid: string, sid: string) => {
+    if (!active) return;
+    setActive({
+      ...active,
+      exercises: active.exercises.map((ex) => {
+        if (ex.id !== eid) return ex;
+        const filtered = ex.sets.filter((s) => s.id !== sid);
+        return {
+          ...ex,
+          sets: filtered.map((s, i) => ({ ...s, set_number: i + 1 })),
+        };
+      }),
+    });
+  };
+
+  const updateSet = (eid: string, sid: string, patch: Partial<SetEntry>) => {
+    if (!active) return;
+    setActive({
+      ...active,
+      exercises: active.exercises.map((ex) => {
+        if (ex.id !== eid) return ex;
+        return {
+          ...ex,
+          sets: ex.sets.map((s) => (s.id === sid ? { ...s, ...patch } : s)),
+        };
+      }),
+    });
+  };
+
+  const toggleSetComplete = async (eid: string, sid: string) => {
+    if (!active) return;
+    const ex = active.exercises.find((e) => e.id === eid);
+    const set = ex?.sets.find((s) => s.id === sid);
+    if (!set || !ex) return;
+
+    const newCompleted = !set.completed;
+    if (newCompleted) {
+      haptic('medium');
+      // Check PR
+      const oneRm = epley(set.weight, set.reps);
+      try {
+        const prRes = await fetch(
+          `${BACKEND_URL}/api/exercises/prs/${encodeURIComponent(ex.exercise_name)}`,
+          { headers: apiHeaders() }
+        );
+        if (prRes.ok) {
+          const data = await prRes.json();
+          const currentBest = data.current_pr?.one_rm || 0;
+          if (oneRm > currentBest && set.weight > 0 && set.reps > 0) {
+            haptic('success');
+            setPrToast({ visible: true, exerciseName: ex.exercise_name, oneRm });
+            updateSet(eid, sid, { completed: true, is_pr: true, one_rm: oneRm });
+            setTimeout(() => setPrToast({ visible: false, exerciseName: '', oneRm: 0 }), 3000);
+          } else {
+            updateSet(eid, sid, { completed: true, one_rm: oneRm });
+          }
+        } else {
+          updateSet(eid, sid, { completed: true, one_rm: oneRm });
+        }
+      } catch {
+        updateSet(eid, sid, { completed: true, one_rm: oneRm });
+      }
+      // Start rest timer
+      startRest(90);
+    } else {
+      updateSet(eid, sid, { completed: false, is_pr: false });
+    }
+  };
+
+  // ---------- Rest timer ----------
+  const startRest = (secs: number) => {
+    haptic('light');
+    setRestTimer({ active: true, secs, total: secs });
+  };
+  const skipRest = () => {
+    setRestTimer({ active: false, secs: 0, total: 0 });
+  };
+  const adjustRest = (delta: number) => {
+    setRestTimer((p) => ({ ...p, secs: Math.max(0, p.secs + delta), total: p.total + delta }));
+  };
+
+  // ============== RENDER ==============
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={ACCENT} />
         </View>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
-            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+  // ----------- Empty / lobby state -----------
+  if (!active) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <Text style={styles.h1}>Workout</Text>
+          <Text style={styles.h2}>Pick a template or start fresh.</Text>
+
+          <TouchableOpacity style={styles.startBtn} onPress={startEmptyWorkout} activeOpacity={0.85}>
+            <Ionicons name="play" size={22} color="#000" />
+            <Text style={styles.startBtnText}>Start Empty Workout</Text>
           </TouchableOpacity>
-          <TextInput
-            style={styles.workoutTitle}
-            value={workout?.name || ''}
-            onChangeText={(text) => {
-              if (workout) {
-                const updated = { ...workout, name: text };
-                setWorkout(updated);
-                saveWorkout(updated);
-              }
-            }}
-            placeholder="Workout Name"
-            placeholderTextColor="#666666"
-          />
-          <TouchableOpacity
-            onPress={finishWorkout}
-            style={styles.finishButton}
-          >
-            <Text style={styles.finishButtonText}>Finish</Text>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.section}>Templates</Text>
+            <TouchableOpacity onPress={() => setShowTemplatesModal(true)}>
+              <Text style={styles.linkText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 16 }}>
+            {templates.presets.slice(0, 7).map((t) => (
+              <TouchableOpacity
+                key={t.template_id}
+                style={styles.tmplChip}
+                onPress={() => startFromTemplate(t)}
+              >
+                <MaterialCommunityIcons name="dumbbell" size={20} color={ACCENT} />
+                <Text style={styles.tmplName}>{t.name}</Text>
+                <Text style={styles.tmplMeta}>{t.exercises.length} exercises</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={[styles.section, { marginTop: 24 }]}>Recent Workouts</Text>
+          {recentWorkouts.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <MaterialCommunityIcons name="calendar-blank-outline" size={32} color={TEXT_MUTED} />
+              <Text style={styles.emptyText}>No workouts yet</Text>
+              <Text style={styles.emptySub}>Press start above to begin your first session.</Text>
+            </View>
+          ) : (
+            recentWorkouts.map((w) => (
+              <View key={w.workout_id} style={styles.recentCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.recentName}>{w.name}</Text>
+                  <Text style={styles.recentMeta}>
+                    {new Date(w.completed_at || w.started_at).toLocaleDateString()} •{' '}
+                    {(w.exercises || []).length} exercises
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={TEXT_MUTED} />
+              </View>
+            ))
+          )}
+        </ScrollView>
+
+        {/* Templates modal */}
+        <TemplatesModal
+          visible={showTemplatesModal}
+          onClose={() => setShowTemplatesModal(false)}
+          templates={templates}
+          onSelect={startFromTemplate}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // ----------- Active session -----------
+  const elapsed = now - active.start_time;
+  const completedSets = active.exercises.reduce(
+    (acc, e) => acc + e.sets.filter((s) => s.completed).length,
+    0
+  );
+  const totalSets = active.exercises.reduce((acc, e) => acc + e.sets.length, 0);
+  const totalVolume = active.exercises.reduce(
+    (acc, e) => acc + e.sets.filter((s) => s.completed).reduce((sa, s) => sa + s.weight * s.reps, 0),
+    0
+  );
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* Top bar */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={cancelWorkout} style={styles.iconBtn}>
+            <Ionicons name="close" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={styles.timerText}>{fmtDur(elapsed)}</Text>
+            <Text style={styles.timerSub}>
+              {completedSets}/{totalSets} sets · {Math.round(totalVolume)} kg
+            </Text>
+          </View>
+          <TouchableOpacity onPress={finishWorkout} style={styles.finishBtn}>
+            <Text style={styles.finishBtnText}>Finish</Text>
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Exercises */}
-          {workout?.exercises.map((exercise) => (
-            <View key={exercise.exercise_id} style={styles.exerciseCard}>
-              {/* Exercise Header */}
-              <View style={styles.exerciseHeader}>
-                <Text style={styles.exerciseName}>{exercise.exercise_name}</Text>
-                <View style={styles.exerciseActions}>
-                  {previousData[exercise.exercise_name] && (
-                    <TouchableOpacity
-                      onPress={() => copyPrevious(exercise)}
-                      style={styles.copyButton}
-                    >
-                      <Ionicons name="copy-outline" size={18} color={ACCENT_COLOR} />
-                      <Text style={styles.copyButtonText}>Copy Previous</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => deleteExercise(exercise.exercise_id)}
-                    style={styles.deleteButton}
-                  >
-                    <Ionicons name="trash-outline" size={20} color="#FF4444" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 200 }}>
+          <Text style={styles.workoutName}>{active.name}</Text>
 
-              {/* Previous Data Hint */}
-              {previousData[exercise.exercise_name] && (
-                <View style={styles.previousHint}>
-                  <Ionicons name="time-outline" size={14} color="#666666" />
-                  <Text style={styles.previousHintText}>
-                    Last: {previousData[exercise.exercise_name]?.sets
-                      .map(s => `${s.weight}kg × ${s.reps}`)
-                      .join(', ')}
-                  </Text>
-                </View>
-              )}
-
-              {/* Sets Header */}
-              <View style={styles.setsHeader}>
-                <Text style={[styles.setHeaderText, { flex: 0.5 }]}>SET</Text>
-                <Text style={[styles.setHeaderText, { flex: 1 }]}>PREVIOUS</Text>
-                <Text style={[styles.setHeaderText, { flex: 1 }]}>KG</Text>
-                <Text style={[styles.setHeaderText, { flex: 1 }]}>REPS</Text>
-                <Text style={[styles.setHeaderText, { flex: 0.5 }]}></Text>
-              </View>
-
-              {/* Sets */}
-              {exercise.sets.map((set, setIndex) => {
-                const prevSet = previousData[exercise.exercise_name]?.sets[setIndex];
-                
-                return (
-                  <View
-                    key={setIndex}
-                    style={[
-                      styles.setRow,
-                      set.completed && styles.setRowCompleted,
-                    ]}
-                  >
-                    <Text style={[styles.setNumber, { flex: 0.5 }]}>
-                      {set.set_number}
-                    </Text>
-                    <Text style={[styles.previousValue, { flex: 1 }]}>
-                      {prevSet ? `${prevSet.weight} × ${prevSet.reps}` : '-'}
-                    </Text>
-                    <TextInput
-                      style={[
-                        styles.setInput,
-                        { flex: 1 },
-                        set.completed && styles.setInputCompleted,
-                      ]}
-                      value={set.weight > 0 ? set.weight.toString() : ''}
-                      onChangeText={(v) => updateSet(exercise.exercise_id, setIndex, 'weight', v)}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor="#444444"
-                    />
-                    <TextInput
-                      style={[
-                        styles.setInput,
-                        { flex: 1 },
-                        set.completed && styles.setInputCompleted,
-                      ]}
-                      value={set.reps > 0 ? set.reps.toString() : ''}
-                      onChangeText={(v) => updateSet(exercise.exercise_id, setIndex, 'reps', v)}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor="#444444"
-                    />
-                    <TouchableOpacity
-                      style={[
-                        styles.checkButton,
-                        { flex: 0.5 },
-                        set.completed && styles.checkButtonCompleted,
-                      ]}
-                      onPress={() => completeSet(exercise.exercise_id, setIndex)}
-                    >
-                      <Ionicons
-                        name={set.completed ? 'checkmark' : 'checkmark-outline'}
-                        size={20}
-                        color={set.completed ? '#000000' : '#666666'}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-
-              {/* Add Set Button */}
-              <TouchableOpacity
-                style={styles.addSetButton}
-                onPress={() => addSet(exercise.exercise_id)}
-              >
-                <Ionicons name="add" size={18} color={ACCENT_COLOR} />
-                <Text style={styles.addSetText}>Add Set</Text>
-              </TouchableOpacity>
-            </View>
+          {active.exercises.map((ex) => (
+            <ExerciseCard
+              key={ex.id}
+              exercise={ex}
+              onAddSet={() => addSet(ex.id)}
+              onRemoveSet={(sid) => removeSet(ex.id, sid)}
+              onUpdateSet={(sid, patch) => updateSet(ex.id, sid, patch)}
+              onToggleComplete={(sid) => toggleSetComplete(ex.id, sid)}
+              onRemove={() => removeExercise(ex.id)}
+              onPlateCalc={(w) => setShowPlateCalc({ open: true, weight: w })}
+            />
           ))}
 
-          {/* Add Exercise Button */}
           <TouchableOpacity
-            style={styles.addExerciseButton}
-            onPress={() => setShowExerciseModal(true)}
+            style={styles.addExerciseBtn}
+            onPress={() => setShowExercisePicker(true)}
           >
-            <Ionicons name="add-circle" size={24} color={ACCENT_COLOR} />
+            <Ionicons name="add" size={22} color={ACCENT} />
             <Text style={styles.addExerciseText}>Add Exercise</Text>
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Floating Rest Timer */}
-        {restTimerActive && (
-          <View style={styles.restTimerContainer}>
-            <Animated.View
-              style={[
-                styles.restTimerProgress,
-                {
-                  width: timerAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', '100%'],
-                  }),
-                },
-              ]}
-            />
-            <View style={styles.restTimerContent}>
-              <TouchableOpacity
-                onPress={() => adjustRestTime(-15)}
-                style={styles.timerAdjustButton}
-              >
-                <Text style={styles.timerAdjustText}>-15s</Text>
-              </TouchableOpacity>
-              <View style={styles.timerCenter}>
-                <Text style={styles.restTimerLabel}>Rest Timer</Text>
-                <Text style={styles.restTimerValue}>{formatTime(currentRestTime)}</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => adjustRestTime(15)}
-                style={styles.timerAdjustButton}
-              >
-                <Text style={styles.timerAdjustText}>+15s</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={stopRestTimer}
-                style={styles.timerCloseButton}
-              >
-                <Ionicons name="close" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          </View>
+        {/* Rest timer overlay */}
+        {restTimer.active && (
+          <RestTimerBar
+            secs={restTimer.secs}
+            total={restTimer.total}
+            onSkip={skipRest}
+            onAdjust={adjustRest}
+          />
         )}
 
-        {/* Add Exercise Modal */}
-        <Modal
-          visible={showExerciseModal}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setShowExerciseModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Exercise</Text>
-                <TouchableOpacity
-                  onPress={() => setShowExerciseModal(false)}
-                  style={styles.modalCloseButton}
-                >
-                  <Ionicons name="close" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
+        {/* PR toast */}
+        {prToast.visible && <PRToast name={prToast.exerciseName} oneRm={prToast.oneRm} />}
 
-              <View style={styles.searchContainer}>
-                <Ionicons name="search" size={20} color="#666666" />
-                <TextInput
-                  style={styles.searchInput}
-                  value={exerciseSearch}
-                  onChangeText={setExerciseSearch}
-                  placeholder="Search exercises..."
-                  placeholderTextColor="#666666"
-                  autoFocus
-                />
-              </View>
-
-              <ScrollView style={styles.suggestionsList}>
-                {exerciseSearch.length > 0 && !suggestions.includes(exerciseSearch) && (
-                  <TouchableOpacity
-                    style={styles.suggestionItem}
-                    onPress={() => addExercise(exerciseSearch)}
-                  >
-                    <Ionicons name="add" size={20} color={ACCENT_COLOR} />
-                    <Text style={styles.suggestionText}>Create "{exerciseSearch}"</Text>
-                  </TouchableOpacity>
-                )}
-                {suggestions.map((suggestion, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.suggestionItem}
-                    onPress={() => addExercise(suggestion)}
-                  >
-                    <Ionicons name="barbell-outline" size={20} color="#666666" />
-                    <Text style={styles.suggestionText}>{suggestion}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+        {/* Modals */}
+        <ExercisePickerModal
+          visible={showExercisePicker}
+          onClose={() => setShowExercisePicker(false)}
+          onSelect={addExercise}
+          sessionToken={sessionToken}
+        />
+        <PlateCalcModal
+          visible={showPlateCalc.open}
+          weight={showPlateCalc.weight}
+          onClose={() => setShowPlateCalc({ open: false, weight: 100 })}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+// ============== EXERCISE CARD ==============
+function ExerciseCard({
+  exercise,
+  onAddSet,
+  onRemoveSet,
+  onUpdateSet,
+  onToggleComplete,
+  onRemove,
+  onPlateCalc,
+}: {
+  exercise: ExerciseEntry;
+  onAddSet: () => void;
+  onRemoveSet: (sid: string) => void;
+  onUpdateSet: (sid: string, patch: Partial<SetEntry>) => void;
+  onToggleComplete: (sid: string) => void;
+  onRemove: () => void;
+  onPlateCalc: (weight: number) => void;
+}) {
+  return (
+    <View style={styles.exCard}>
+      <View style={styles.exHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.exName}>{exercise.exercise_name}</Text>
+          {exercise.muscle_group && (
+            <Text style={styles.exMuscle}>{exercise.muscle_group}</Text>
+          )}
+        </View>
+        <TouchableOpacity onPress={onRemove} style={styles.iconBtnSmall}>
+          <Ionicons name="trash-outline" size={18} color={TEXT_MUTED} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Header row */}
+      <View style={styles.setHeader}>
+        <Text style={[styles.setHeadCol, { width: 30 }]}>SET</Text>
+        <Text style={[styles.setHeadCol, { flex: 1.2 }]}>PREV</Text>
+        <Text style={[styles.setHeadCol, { flex: 1 }]}>KG</Text>
+        <Text style={[styles.setHeadCol, { flex: 1 }]}>REPS</Text>
+        <Text style={[styles.setHeadCol, { width: 44, textAlign: 'center' }]}>✓</Text>
+      </View>
+
+      {exercise.sets.map((s) => (
+        <SetRow
+          key={s.id}
+          set={s}
+          prev={exercise.prev}
+          onChange={(patch) => onUpdateSet(s.id, patch)}
+          onToggle={() => onToggleComplete(s.id)}
+          onRemove={() => onRemoveSet(s.id)}
+          onPlate={() => onPlateCalc(s.weight)}
+        />
+      ))}
+
+      <TouchableOpacity style={styles.addSetBtn} onPress={onAddSet}>
+        <Ionicons name="add" size={18} color={ACCENT} />
+        <Text style={styles.addSetText}>Add Set</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SetRow({
+  set,
+  prev,
+  onChange,
+  onToggle,
+  onRemove,
+  onPlate,
+}: {
+  set: SetEntry;
+  prev?: { weight: number; reps: number } | null;
+  onChange: (patch: Partial<SetEntry>) => void;
+  onToggle: () => void;
+  onRemove: () => void;
+  onPlate: () => void;
+}) {
+  const [w, setW] = useState(String(set.weight || ''));
+  const [r, setR] = useState(String(set.reps || ''));
+
+  useEffect(() => setW(String(set.weight || '')), [set.weight]);
+  useEffect(() => setR(String(set.reps || '')), [set.reps]);
+
+  const commitW = (v: string) => {
+    const n = parseFloat(v) || 0;
+    onChange({ weight: n });
+  };
+  const commitR = (v: string) => {
+    const n = parseInt(v) || 0;
+    onChange({ reps: n });
+  };
+
+  return (
+    <View style={[styles.setRow, set.completed && styles.setRowDone, set.is_pr && styles.setRowPR]}>
+      <Pressable onLongPress={onRemove} style={{ width: 30 }}>
+        <Text style={styles.setNum}>{set.set_number}</Text>
+      </Pressable>
+      <TouchableOpacity style={{ flex: 1.2 }} onPress={onPlate}>
+        <Text style={styles.prevText}>
+          {prev ? `${prev.weight}kg × ${prev.reps}` : '—'}
+        </Text>
+      </TouchableOpacity>
+      <TextInput
+        style={[styles.setInput, { flex: 1 }]}
+        value={w}
+        onChangeText={setW}
+        onBlur={() => commitW(w)}
+        keyboardType="decimal-pad"
+        placeholder="0"
+        placeholderTextColor="#444"
+        selectTextOnFocus
+      />
+      <TextInput
+        style={[styles.setInput, { flex: 1 }]}
+        value={r}
+        onChangeText={setR}
+        onBlur={() => commitR(r)}
+        keyboardType="number-pad"
+        placeholder="0"
+        placeholderTextColor="#444"
+        selectTextOnFocus
+      />
+      <TouchableOpacity
+        onPress={onToggle}
+        style={[
+          styles.checkBtn,
+          set.completed && { backgroundColor: set.is_pr ? GOLD : ACCENT, borderColor: 'transparent' },
+        ]}
+      >
+        {set.is_pr ? (
+          <Ionicons name="trophy" size={18} color="#000" />
+        ) : (
+          <Ionicons
+            name={set.completed ? 'checkmark' : 'checkmark-outline'}
+            size={20}
+            color={set.completed ? '#000' : '#555'}
+          />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ============== EXERCISE PICKER MODAL ==============
+function ExercisePickerModal({
+  visible,
+  onClose,
+  onSelect,
+  sessionToken,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (name: string, muscle_group?: string) => void;
+  sessionToken: string | null;
+}) {
+  const [query, setQuery] = useState('');
+  const [muscleGroup, setMuscleGroup] = useState<string | null>(null);
+  const [groups, setGroups] = useState<string[]>([]);
+  const [results, setResults] = useState<{ name: string; muscle_group: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    fetch(`${BACKEND_URL}/api/exercises/library`)
+      .then((r) => r.json())
+      .then((d) => setGroups(Object.keys(d.library || {})))
+      .catch(() => {});
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !sessionToken) return;
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    if (muscleGroup) params.append('muscle_group', muscleGroup);
+    fetch(`${BACKEND_URL}/api/exercises/library/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setResults(d.exercises || []))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
+  }, [query, muscleGroup, visible, sessionToken]);
+
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={[styles.modalContainer, { paddingTop: insets.top || 16 }]}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Pick Exercise</Text>
+          <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
+            <Ionicons name="close" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={18} color={TEXT_MUTED} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search exercises…"
+            placeholderTextColor={TEXT_MUTED}
+            value={query}
+            onChangeText={setQuery}
+            autoFocus
+          />
+          {!!query && (
+            <TouchableOpacity onPress={() => setQuery('')}>
+              <Ionicons name="close-circle" size={18} color={TEXT_MUTED} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.groupsRow}>
+          <TouchableOpacity
+            style={[styles.groupChip, !muscleGroup && styles.groupChipActive]}
+            onPress={() => setMuscleGroup(null)}
+          >
+            <Text style={[styles.groupChipText, !muscleGroup && styles.groupChipTextActive]}>All</Text>
+          </TouchableOpacity>
+          {groups.map((g) => (
+            <TouchableOpacity
+              key={g}
+              style={[styles.groupChip, muscleGroup === g && styles.groupChipActive]}
+              onPress={() => setMuscleGroup(muscleGroup === g ? null : g)}
+            >
+              <Text
+                style={[styles.groupChipText, muscleGroup === g && styles.groupChipTextActive]}
+              >
+                {g}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        {loading ? (
+          <ActivityIndicator color={ACCENT} style={{ marginTop: 24 }} />
+        ) : (
+          <FlatList
+            data={results}
+            keyExtractor={(item, idx) => `${item.name}_${idx}`}
+            ItemSeparatorComponent={() => <View style={styles.sep} />}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.exerciseRow}
+                onPress={() => {
+                  haptic('light');
+                  onSelect(item.name, item.muscle_group);
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.exerciseRowName}>{item.name}</Text>
+                  <Text style={styles.exerciseRowMuscle}>{item.muscle_group}</Text>
+                </View>
+                <Ionicons name="add-circle-outline" size={22} color={ACCENT} />
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <Text style={styles.emptyResults}>No exercises found</Text>
+            }
+            contentContainerStyle={{ paddingBottom: 32 }}
+          />
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+// ============== TEMPLATES MODAL ==============
+function TemplatesModal({
+  visible,
+  onClose,
+  templates,
+  onSelect,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  templates: { presets: Template[]; user_templates: Template[] };
+  onSelect: (t: Template) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={[styles.modalContainer, { paddingTop: insets.top || 16 }]}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Templates</Text>
+          <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
+            <Ionicons name="close" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+          <Text style={styles.section}>Pre-built</Text>
+          {templates.presets.map((t) => (
+            <TouchableOpacity key={t.template_id} style={styles.tmplCard} onPress={() => onSelect(t)}>
+              <MaterialCommunityIcons name="dumbbell" size={26} color={ACCENT} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.tmplCardName}>{t.name}</Text>
+                <Text style={styles.tmplCardMeta}>
+                  {t.exercises.map((e) => e.exercise_name).join(' · ')}
+                </Text>
+              </View>
+              <Ionicons name="play-circle" size={26} color={ACCENT} />
+            </TouchableOpacity>
+          ))}
+          {templates.user_templates.length > 0 && (
+            <>
+              <Text style={[styles.section, { marginTop: 24 }]}>Your Templates</Text>
+              {templates.user_templates.map((t) => (
+                <TouchableOpacity key={t.template_id} style={styles.tmplCard} onPress={() => onSelect(t)}>
+                  <MaterialCommunityIcons name="account" size={26} color={GOLD} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.tmplCardName}>{t.name}</Text>
+                    <Text style={styles.tmplCardMeta}>
+                      {t.exercises.map((e) => e.exercise_name).join(' · ')}
+                    </Text>
+                  </View>
+                  <Ionicons name="play-circle" size={26} color={GOLD} />
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ============== PLATE CALCULATOR MODAL ==============
+function PlateCalcModal({
+  visible,
+  weight,
+  onClose,
+}: {
+  visible: boolean;
+  weight: number;
+  onClose: () => void;
+}) {
+  const [w, setW] = useState(weight || 100);
+  useEffect(() => setW(weight || 100), [weight]);
+  const calc = calcPlates(w);
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.plateModal} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Plate Calculator</Text>
+            <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.plateInputRow}>
+            <Text style={styles.plateLabel}>Target Weight (kg)</Text>
+            <TextInput
+              style={styles.plateInput}
+              value={String(w)}
+              onChangeText={(v) => setW(parseFloat(v) || 0)}
+              keyboardType="decimal-pad"
+              selectTextOnFocus
+            />
+          </View>
+          <View style={styles.plateQuickRow}>
+            {[60, 80, 100, 120, 140].map((v) => (
+              <TouchableOpacity key={v} style={styles.plateQuick} onPress={() => setW(v)}>
+                <Text style={styles.plateQuickText}>{v}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Bar visualization */}
+          <View style={styles.barContainer}>
+            {/* Left side plates (mirrored order) */}
+            <View style={styles.plateSide}>
+              {[...calc.perSide].reverse().map((p, i) => (
+                <View
+                  key={`l_${i}`}
+                  style={[
+                    styles.plate,
+                    {
+                      backgroundColor: PLATE_COLORS[p],
+                      height: 36 + p * 1.2,
+                      width: 8 + p * 0.4,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+            {/* Bar */}
+            <View style={styles.bar} />
+            {/* Right side plates */}
+            <View style={styles.plateSide}>
+              {calc.perSide.map((p, i) => (
+                <View
+                  key={`r_${i}`}
+                  style={[
+                    styles.plate,
+                    {
+                      backgroundColor: PLATE_COLORS[p],
+                      height: 36 + p * 1.2,
+                      width: 8 + p * 0.4,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+
+          <Text style={styles.plateSummary}>
+            Bar 20 kg + {calc.perSide.length * 2} plates ={' '}
+            <Text style={{ color: ACCENT, fontWeight: '700' }}>{w} kg</Text>
+          </Text>
+          <Text style={styles.plateBreakdown}>
+            Per side:{' '}
+            {calc.perSide.length === 0
+              ? 'just the bar'
+              : calc.perSide.map((p) => `${p}kg`).join(' + ')}
+            {calc.remainder > 0 ? ` (+${calc.remainder}kg short)` : ''}
+          </Text>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ============== REST TIMER BAR ==============
+function RestTimerBar({
+  secs,
+  total,
+  onSkip,
+  onAdjust,
+}: {
+  secs: number;
+  total: number;
+  onSkip: () => void;
+  onAdjust: (delta: number) => void;
+}) {
+  const pct = total > 0 ? (secs / total) * 100 : 0;
+  return (
+    <View style={styles.restBar}>
+      <View style={[styles.restProgress, { width: `${pct}%` }]} />
+      <View style={styles.restRow}>
+        <TouchableOpacity onPress={() => onAdjust(-15)} style={styles.restBtn}>
+          <Text style={styles.restBtnText}>−15</Text>
+        </TouchableOpacity>
+        <View style={{ alignItems: 'center', flex: 1 }}>
+          <Text style={styles.restLabel}>REST</Text>
+          <Text style={styles.restTime}>{fmtDur(secs * 1000)}</Text>
+        </View>
+        <TouchableOpacity onPress={() => onAdjust(15)} style={styles.restBtn}>
+          <Text style={styles.restBtnText}>+15</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onSkip} style={styles.skipBtn}>
+          <Ionicons name="play-skip-forward" size={18} color="#000" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ============== PR TOAST ==============
+function PRToast({ name, oneRm }: { name: string; oneRm: number }) {
+  const scale = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 90, friction: 6 }).start();
+  }, []);
+  return (
+    <Animated.View style={[styles.prToast, { transform: [{ scale }] }]}>
+      <Ionicons name="trophy" size={28} color="#000" />
+      <View style={{ marginLeft: 12, flex: 1 }}>
+        <Text style={styles.prTitle}>NEW PR! 🎉</Text>
+        <Text style={styles.prSub}>
+          {name} · est. 1RM {oneRm}kg
+        </Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+// ============== STYLES ==============
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BACKGROUND_COLOR,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: BG },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { padding: 16, paddingBottom: 64 },
+  h1: { color: '#fff', fontSize: 32, fontWeight: '900', letterSpacing: 0.5 },
+  h2: { color: TEXT_MUTED, fontSize: 14, marginBottom: 18 },
+  startBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
+    justifyContent: 'center',
+    backgroundColor: ACCENT,
+    paddingVertical: 18,
+    borderRadius: 14,
+    gap: 8,
+    marginBottom: 24,
   },
-  backButton: {
-    padding: 8,
-  },
-  workoutTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginHorizontal: 12,
-  },
-  finishButton: {
-    backgroundColor: SUCCESS_COLOR,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  finishButtonText: {
-    color: '#000000',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 120,
-  },
-  exerciseCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER_COLOR,
-  },
-  exerciseHeader: {
+  startBtnText: { color: '#000', fontWeight: '800', fontSize: 16 },
+  section: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  exerciseName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    flex: 1,
-  },
-  exerciseActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  copyButtonText: {
-    fontSize: 12,
-    color: ACCENT_COLOR,
-    fontWeight: '500',
-  },
-  deleteButton: {
-    padding: 8,
-  },
-  previousHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 12,
-    gap: 6,
   },
-  previousHintText: {
-    fontSize: 12,
-    color: '#666666',
+  linkText: { color: ACCENT, fontSize: 13, fontWeight: '600' },
+  tmplChip: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginRight: 10,
+    minWidth: 130,
   },
-  setsHeader: {
+  tmplName: { color: '#fff', fontSize: 14, fontWeight: '700', marginTop: 8 },
+  tmplMeta: { color: TEXT_MUTED, fontSize: 11, marginTop: 2 },
+  emptyCard: {
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  emptyText: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 8 },
+  emptySub: { color: TEXT_MUTED, fontSize: 13, marginTop: 4, textAlign: 'center' },
+  recentCard: {
     flexDirection: 'row',
-    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: CARD,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  recentName: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  recentMeta: { color: TEXT_MUTED, fontSize: 12, marginTop: 2 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
+    borderBottomColor: BORDER,
+  },
+  iconBtn: { width: 38, height: 38, justifyContent: 'center', alignItems: 'center' },
+  iconBtnSmall: { width: 30, height: 30, justifyContent: 'center', alignItems: 'center' },
+  timerText: { color: ACCENT, fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  timerSub: { color: TEXT_MUTED, fontSize: 11, marginTop: 2 },
+  finishBtn: {
+    backgroundColor: ACCENT,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  finishBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
+  workoutName: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  exCard: {
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  exHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  exName: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  exMuscle: { color: ACCENT, fontSize: 11, marginTop: 2, textTransform: 'capitalize' },
+  setHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
     marginBottom: 4,
   },
-  setHeaderText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#666666',
-    textAlign: 'center',
-  },
+  setHeadCol: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    gap: 6,
   },
-  setRowCompleted: {
-    backgroundColor: 'rgba(0, 255, 135, 0.05)',
-  },
-  setNumber: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  previousValue: {
-    fontSize: 13,
-    color: '#555555',
-    textAlign: 'center',
-  },
+  setRowDone: { backgroundColor: 'rgba(0,212,255,0.06)', borderRadius: 8 },
+  setRowPR: { backgroundColor: 'rgba(245,166,35,0.10)', borderRadius: 8 },
+  setNum: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  prevText: { color: TEXT_MUTED, fontSize: 12 },
   setInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    marginHorizontal: 4,
-    textAlign: 'center',
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  setInputCompleted: {
-    backgroundColor: 'rgba(0, 255, 135, 0.1)',
-  },
-  checkButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkButtonCompleted: {
-    backgroundColor: SUCCESS_COLOR,
-  },
-  addSetButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-    gap: 4,
-  },
-  addSetText: {
-    fontSize: 14,
-    color: ACCENT_COLOR,
-    fontWeight: '500',
-  },
-  addExerciseButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-    borderWidth: 2,
-    borderColor: ACCENT_COLOR,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    paddingVertical: 20,
-    gap: 8,
-  },
-  addExerciseText: {
-    fontSize: 16,
-    color: ACCENT_COLOR,
-    fontWeight: '600',
-  },
-  // Rest Timer Styles
-  restTimerContainer: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
     backgroundColor: '#1A1A1A',
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: ACCENT_COLOR,
+    color: '#fff',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    textAlign: 'center',
+    fontWeight: '600',
+    fontSize: 15,
   },
-  restTimerProgress: {
+  checkBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addSetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,212,255,0.08)',
+    borderRadius: 10,
+    marginTop: 10,
+    gap: 6,
+  },
+  addSetText: { color: ACCENT, fontWeight: '700', fontSize: 13 },
+  addExerciseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,212,255,0.10)',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+    marginTop: 8,
+  },
+  addExerciseText: { color: ACCENT, fontWeight: '700', fontSize: 15 },
+  // Modals
+  modalContainer: { flex: 1, backgroundColor: BG },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  modalTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD,
+    margin: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  searchInput: { flex: 1, color: '#fff', fontSize: 15 },
+  groupsRow: { paddingHorizontal: 16, marginBottom: 8, flexGrow: 0, height: 44 },
+  groupChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: CARD,
+    marginRight: 8,
+  },
+  groupChipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  groupChipText: { color: '#bbb', fontWeight: '600', fontSize: 13, textTransform: 'capitalize' },
+  groupChipTextActive: { color: '#000' },
+  exerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  exerciseRowName: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  exerciseRowMuscle: { color: TEXT_MUTED, fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
+  sep: { height: 1, backgroundColor: BORDER, marginHorizontal: 16 },
+  emptyResults: { color: TEXT_MUTED, textAlign: 'center', marginTop: 40 },
+  // Templates modal
+  tmplCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  tmplCardName: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  tmplCardMeta: { color: TEXT_MUTED, fontSize: 11, marginTop: 2 },
+  // Plate modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  plateModal: {
+    backgroundColor: CARD,
+    borderRadius: 16,
+    padding: 0,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  plateInputRow: { paddingHorizontal: 16, paddingTop: 12 },
+  plateLabel: { color: TEXT_MUTED, fontSize: 12, marginBottom: 6 },
+  plateInput: {
+    backgroundColor: '#1A1A1A',
+    color: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  plateQuickRow: { flexDirection: 'row', paddingHorizontal: 16, marginTop: 10, gap: 8 },
+  plateQuick: {
+    flex: 1,
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  plateQuickText: { color: '#fff', fontWeight: '700' },
+  barContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    marginBottom: 12,
+  },
+  plateSide: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  plate: { borderRadius: 4, borderWidth: 1, borderColor: '#000' },
+  bar: { height: 6, width: 80, backgroundColor: '#888', borderRadius: 3 },
+  plateSummary: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+  },
+  plateBreakdown: {
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    marginTop: 4,
+  },
+  // Rest timer
+  restBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#1A1A1A',
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+  },
+  restProgress: {
     position: 'absolute',
     top: 0,
     left: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 212, 255, 0.2)',
+    backgroundColor: 'rgba(0,212,255,0.18)',
   },
-  restTimerContent: {
+  restRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
+  restBtn: {
+    backgroundColor: '#2A2A2A',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  restBtnText: { color: '#fff', fontWeight: '700' },
+  restLabel: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  restTime: { color: ACCENT, fontSize: 22, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  skipBtn: { backgroundColor: ACCENT, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  // PR toast
+  prToast: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: GOLD,
+    borderRadius: 14,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
-  timerAdjustButton: {
-    padding: 8,
-  },
-  timerAdjustText: {
-    color: ACCENT_COLOR,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  timerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  restTimerLabel: {
-    fontSize: 12,
-    color: '#888888',
-  },
-  restTimerValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  timerCloseButton: {
-    padding: 8,
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: CARD_BG,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  modalCloseButton: {
-    padding: 8,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    margin: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  suggestionsList: {
-    maxHeight: 400,
-  },
-  suggestionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  suggestionText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
+  prTitle: { color: '#000', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
+  prSub: { color: '#000', fontSize: 12, fontWeight: '600', opacity: 0.85 },
 });
