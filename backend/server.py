@@ -2044,22 +2044,22 @@ async def calculate_plates(
 
 # ==================== INDIAN FOODS DB + GEMINI SCANNER ====================
 
-# Built-in Indian foods database (per 100g unless noted)
+# Built-in Indian foods database (mix of per-100g and per-serving)
 INDIAN_FOODS_DB = [
-    {"name": "Dal Tadka", "per_100g": True, "calories": 116, "protein": 7.0, "carbs": 17.0, "fats": 2.4, "tags": ["dal", "lentil"]},
-    {"name": "Roti", "per_unit": "1 roti (40g)", "calories": 110, "protein": 3.5, "carbs": 22.0, "fats": 1.5, "tags": ["bread", "chapati"]},
+    {"name": "Dal Tadka", "per_unit": "1 serving", "per_100g": False, "calories": 290, "protein": 18.0, "carbs": 40.0, "fats": 6.0, "tags": ["dal", "lentil"]},
+    {"name": "Roti / Chapati", "per_100g": True, "calories": 297, "protein": 9.7, "carbs": 53.0, "fats": 3.7, "tags": ["bread", "chapati", "roti"]},
     {"name": "White Rice (cooked)", "per_100g": True, "calories": 130, "protein": 2.7, "carbs": 28.0, "fats": 0.3, "tags": ["rice"]},
-    {"name": "Paneer", "per_100g": True, "calories": 296, "protein": 18.3, "carbs": 4.0, "fats": 22.7, "tags": ["dairy"]},
-    {"name": "Chana Dal", "per_100g": True, "calories": 153, "protein": 8.0, "carbs": 22.0, "fats": 3.0, "tags": ["dal", "lentil"]},
-    {"name": "Rajma", "per_100g": True, "calories": 127, "protein": 8.5, "carbs": 22.0, "fats": 0.7, "tags": ["beans", "kidney"]},
-    {"name": "Chicken Biryani", "per_100g": True, "calories": 196, "protein": 11.0, "carbs": 19.0, "fats": 8.5, "tags": ["rice", "chicken"]},
-    {"name": "Palak Paneer", "per_100g": True, "calories": 180, "protein": 8.0, "carbs": 6.0, "fats": 14.0, "tags": ["paneer", "spinach"]},
-    {"name": "Masala Dosa", "per_unit": "1 dosa (180g)", "calories": 380, "protein": 8.0, "carbs": 60.0, "fats": 12.0, "tags": ["dosa", "south"]},
-    {"name": "Idli", "per_unit": "1 idli (50g)", "calories": 60, "protein": 2.0, "carbs": 12.0, "fats": 0.4, "tags": ["south"]},
-    {"name": "Samosa", "per_unit": "1 piece (60g)", "calories": 250, "protein": 5.0, "carbs": 28.0, "fats": 13.0, "tags": ["snack", "fried"]},
-    {"name": "Chole", "per_100g": True, "calories": 164, "protein": 9.0, "carbs": 27.0, "fats": 2.6, "tags": ["chickpea"]},
-    {"name": "Moong Dal", "per_100g": True, "calories": 105, "protein": 7.0, "carbs": 19.0, "fats": 0.4, "tags": ["dal", "lentil"]},
-    {"name": "Masoor Dal", "per_100g": True, "calories": 116, "protein": 9.0, "carbs": 20.0, "fats": 0.4, "tags": ["dal", "lentil"]},
+    {"name": "Paneer", "per_100g": True, "calories": 321, "protein": 18.3, "carbs": 3.1, "fats": 25.0, "tags": ["dairy"]},
+    {"name": "Chana Dal", "per_100g": True, "calories": 150, "protein": 8.5, "carbs": 25.0, "fats": 2.5, "tags": ["dal", "lentil"]},
+    {"name": "Rajma (cooked)", "per_100g": True, "calories": 127, "protein": 8.7, "carbs": 22.8, "fats": 0.5, "tags": ["beans", "kidney"]},
+    {"name": "Chicken Biryani", "per_unit": "1 serving (350g)", "per_100g": False, "calories": 490, "protein": 26.0, "carbs": 63.0, "fats": 14.0, "tags": ["rice", "chicken"]},
+    {"name": "Palak Paneer", "per_unit": "1 serving (200g)", "per_100g": False, "calories": 280, "protein": 12.0, "carbs": 14.0, "fats": 18.0, "tags": ["paneer", "spinach"]},
+    {"name": "Masala Dosa", "per_unit": "1 serving", "per_100g": False, "calories": 260, "protein": 5.5, "carbs": 40.0, "fats": 8.0, "tags": ["dosa", "south"]},
+    {"name": "Idli", "per_unit": "1 piece", "per_100g": False, "calories": 58, "protein": 2.0, "carbs": 12.2, "fats": 0.4, "tags": ["south"]},
+    {"name": "Samosa", "per_100g": True, "calories": 262, "protein": 4.4, "carbs": 30.1, "fats": 14.9, "tags": ["snack", "fried"]},
+    {"name": "Chole (cooked)", "per_100g": True, "calories": 164, "protein": 8.9, "carbs": 27.4, "fats": 2.6, "tags": ["chickpea"]},
+    {"name": "Moong Dal (cooked)", "per_100g": True, "calories": 104, "protein": 7.6, "carbs": 18.6, "fats": 0.4, "tags": ["dal", "lentil"]},
+    {"name": "Masoor Dal (cooked)", "per_100g": True, "calories": 116, "protein": 9.0, "carbs": 20.0, "fats": 0.4, "tags": ["dal", "lentil"]},
     {"name": "Aloo Gobi", "per_100g": True, "calories": 110, "protein": 3.0, "carbs": 14.0, "fats": 5.0, "tags": ["potato", "cauliflower"]},
     {"name": "Tandoori Chicken", "per_100g": True, "calories": 165, "protein": 25.0, "carbs": 1.0, "fats": 6.5, "tags": ["chicken"]},
 ]
@@ -2091,51 +2091,70 @@ async def get_cooking_methods():
 class GeminiScanRequest(BaseModel):
     image_base64: str
 
+# Direct Gemini API helper using user's specific key
+async def _gemini_vision(image_base64: str, prompt: str, system_instruction: str = "") -> str:
+    """Call Gemini 2.5 Flash via direct REST with the user's GEMINI_API_KEY."""
+    import httpx
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+
+    # Gemini 2.5 Flash multimodal endpoint
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.5-flash:generateContent?key={api_key}"
+    )
+    contents = [{
+        "role": "user",
+        "parts": [
+            {"text": prompt},
+            {"inline_data": {"mime_type": "image/jpeg", "data": image_base64}},
+        ],
+    }]
+    body = {
+        "contents": contents,
+        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+    }
+    if system_instruction:
+        body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        try:
+            r = await client.post(url, json=body)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Gemini network error: {e}")
+        if r.status_code != 200:
+            logger.error(f"Gemini error {r.status_code}: {r.text[:500]}")
+            raise HTTPException(status_code=502, detail=f"Gemini API error: {r.status_code}")
+        data = r.json()
+        try:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            logger.error(f"Gemini unexpected: {data}")
+            raise HTTPException(status_code=502, detail="Gemini returned no content")
+
+
 @scanner_router.post("/gemini-food")
 async def gemini_food_scan(
     request: GeminiScanRequest,
     user: User = Depends(get_current_user)
 ):
-    """Scan a meal photo using Gemini 2.5 Flash. Returns confidence + per-item macros."""
+    """Scan a meal photo using Gemini 2.5 Flash with direct API key."""
+    import json
+
+    prompt = """You are a precise nutrition analyst. Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
+
+Important guidelines:
+- For Indian foods, use accurate INDB-style values (e.g., dal tadka 290 cal/serving, paneer 321 cal/100g, biryani 490 cal/350g, idli 58 cal/piece, samosa 262 cal/100g).
+- Numbers must be plain JSON numbers, not strings.
+- "uncertain_items" lists item names whose weight estimate has low confidence.
+- "total" must equal the sum of items.
+"""
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-        import json
-
-        prompt = """You are a precise nutrition analyst. Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible (plate edge, hand, fork). Use accurate per-100g nutrition values for typical foods (Indian foods preferred when applicable). Return ONLY raw JSON in this EXACT format, no markdown, no commentary:
-{
-  "confidence": 0.85,
-  "items": [
-    {"name": "string", "weight_g": 0, "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0}
-  ],
-  "total": {"calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0},
-  "uncertain_items": []
-}
-
-Rules:
-- confidence: 0.0-1.0 reflecting how sure you are about the identification AND portion size
-- weight_g: integer grams
-- All macro fields: numbers (rounded to 1 decimal)
-- uncertain_items: list of item names where weight is hard to estimate
-- total: must equal sum of items"""
-
-        api_key = os.getenv("EMERGENT_LLM_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="LLM API key not configured")
-
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"food_scan_{uuid.uuid4().hex[:8]}",
-            system_message="You are a precise nutrition analyst. Output ONLY valid JSON, no markdown."
-        ).with_model("gemini", "gemini-2.5-flash")
-
-        image_content = ImageContent(image_base64=request.image_base64)
-        message = UserMessage(text=prompt, file_contents=[image_content])
-        response = await chat.send_message(message)
-
-        # Clean response
-        text = response.strip()
+        text = await _gemini_vision(request.image_base64, prompt)
+        text = text.strip()
         if text.startswith("```"):
-            text = text.split("```")[1]
+            text = text.split("```", 2)[1]
             if text.startswith("json"):
                 text = text[4:]
             text = text.strip()
@@ -2144,23 +2163,220 @@ Rules:
 
         try:
             data = json.loads(text)
+
+            # Apply Indian-food override if matches
+            indian_lookup = {f["name"].lower(): f for f in INDIAN_FOODS_DB}
+            override_items = []
+            for it in data.get("items", []):
+                name = (it.get("name") or "").strip()
+                weight = it.get("weight_g") or 0
+                key = name.lower()
+                # Try exact match or substring match against Indian DB
+                match = None
+                for k, f in indian_lookup.items():
+                    if k == key or any(t in key for t in f.get("tags", [])):
+                        match = f
+                        break
+                if match and weight > 0:
+                    if match.get("per_100g"):
+                        ratio = weight / 100.0
+                    else:
+                        # Per serving: assume 1 serving regardless of weight
+                        ratio = 1.0
+                    override_items.append({
+                        "name": match["name"],
+                        "weight_g": weight,
+                        "calories": round(match["calories"] * ratio),
+                        "protein_g": round(match["protein"] * ratio, 1),
+                        "carbs_g": round(match["carbs"] * ratio, 1),
+                        "fat_g": round(match["fats"] * ratio, 1),
+                    })
+                else:
+                    override_items.append(it)
+
+            total = {
+                "calories": round(sum(i.get("calories", 0) for i in override_items)),
+                "protein_g": round(sum(i.get("protein_g", 0) for i in override_items), 1),
+                "carbs_g": round(sum(i.get("carbs_g", 0) for i in override_items), 1),
+                "fat_g": round(sum(i.get("fat_g", 0) for i in override_items), 1),
+            }
             return {
                 "success": True,
                 "confidence": data.get("confidence", 0.7),
-                "items": data.get("items", []),
-                "total": data.get("total", {}),
+                "items": override_items,
+                "total": total,
                 "uncertain_items": data.get("uncertain_items", []),
             }
         except json.JSONDecodeError:
-            logger.error(f"Gemini food scan parse error: {text}")
+            logger.error(f"Gemini food scan parse error: {text[:500]}")
             return {
                 "success": False,
                 "message": "Could not parse scan result",
                 "raw": text[:500],
             }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Gemini food scan error: {e}")
         raise HTTPException(status_code=500, detail=f"Scan failed: {e}")
+
+
+# ==================== USDA BARCODE LOOKUP ====================
+
+@scanner_router.post("/usda-barcode")
+async def usda_barcode_lookup(
+    request: dict,
+    user: User = Depends(get_current_user)
+):
+    """Lookup a barcode/UPC via USDA FoodData Central API."""
+    import httpx
+    api_key = os.getenv("USDA_API_KEY")
+    barcode = (request.get("barcode") or "").strip()
+    if not barcode:
+        raise HTTPException(status_code=400, detail="Barcode required")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="USDA_API_KEY not configured")
+
+    url = "https://api.nal.usda.gov/fdc/v1/foods/search"
+    params = {"query": barcode, "api_key": api_key, "pageSize": 5}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url, params=params)
+            if r.status_code != 200:
+                logger.error(f"USDA error {r.status_code}: {r.text[:300]}")
+                raise HTTPException(status_code=502, detail="USDA API error")
+            data = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"USDA network error: {e}")
+
+    foods = data.get("foods", [])
+    if not foods:
+        # Fallback: OpenFoodFacts free
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                off = await client.get(
+                    f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
+                )
+                off_data = off.json()
+                if off_data.get("status") == 1 and off_data.get("product"):
+                    p = off_data["product"]
+                    n = p.get("nutriments", {}) or {}
+                    return {
+                        "success": True,
+                        "source": "openfoodfacts",
+                        "product": {
+                            "name": p.get("product_name") or "Unknown",
+                            "brand": p.get("brands") or "",
+                            "calories_per_100g": n.get("energy-kcal_100g") or 0,
+                            "protein_per_100g": n.get("proteins_100g") or 0,
+                            "carbs_per_100g": n.get("carbohydrates_100g") or 0,
+                            "fats_per_100g": n.get("fat_100g") or 0,
+                            "serving_size_g": p.get("serving_size", "100g"),
+                        },
+                    }
+        except Exception:
+            pass
+        return {"success": False, "message": "Product not found in USDA or OpenFoodFacts."}
+
+    f = foods[0]
+    nutrients = {n.get("nutrientName") or n.get("nutrientNumber"): n.get("value") for n in f.get("foodNutrients", [])}
+    return {
+        "success": True,
+        "source": "usda",
+        "product": {
+            "name": f.get("description") or "Unknown",
+            "brand": f.get("brandOwner") or "",
+            "calories_per_100g": nutrients.get("Energy") or nutrients.get("Energy (Atwater General Factors)") or 0,
+            "protein_per_100g": nutrients.get("Protein") or 0,
+            "carbs_per_100g": nutrients.get("Carbohydrate, by difference") or 0,
+            "fats_per_100g": nutrients.get("Total lipid (fat)") or 0,
+            "serving_size_g": f.get("servingSize") or 100,
+        },
+    }
+
+
+# ==================== LABEL OCR via Gemini ====================
+
+class LabelOcrRequest(BaseModel):
+    image_base64: str
+
+@scanner_router.post("/label-ocr")
+async def label_ocr(
+    request: LabelOcrRequest,
+    user: User = Depends(get_current_user)
+):
+    """Read a Nutrition Facts label image via Gemini 2.5 Flash and return structured macros."""
+    import json
+
+    prompt = """You are an OCR engine reading a Nutrition Facts label. Extract all values you see and return ONLY this JSON:
+{
+  "product_name": string or null,
+  "serving_size": string,
+  "servings_per_container": number or null,
+  "calories": number,
+  "protein_g": number,
+  "carbs_g": number,
+  "fat_g": number,
+  "saturated_fat_g": number or null,
+  "fiber_g": number or null,
+  "sugar_g": number or null,
+  "sodium_mg": number or null,
+  "confidence": number between 0 and 1
+}
+
+All values are PER serving (not per container). If a field cannot be read, set it to 0 or null. Numbers must be JSON numbers, not strings."""
+
+    try:
+        text = await _gemini_vision(request.image_base64, prompt)
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        if text.endswith("```"):
+            text = text[:-3].strip()
+        try:
+            data = json.loads(text)
+            return {"success": True, **data}
+        except json.JSONDecodeError:
+            return {"success": False, "message": "Could not parse label", "raw": text[:500]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Label OCR error: {e}")
+        raise HTTPException(status_code=500, detail=f"OCR failed: {e}")
+
+
+# Save extracted label as a personal food
+class SaveLabelRequest(BaseModel):
+    name: str
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    serving_size: Optional[str] = None
+
+@scanner_router.post("/save-label")
+async def save_label_food(
+    req: SaveLabelRequest,
+    user: User = Depends(get_current_user)
+):
+    """Save an OCR'd label as a personal food entry."""
+    food = {
+        "user_id": user.user_id,
+        "name": req.name,
+        "calories": req.calories,
+        "protein_g": req.protein_g,
+        "carbs_g": req.carbs_g,
+        "fat_g": req.fat_g,
+        "serving_size": req.serving_size or "1 serving",
+        "created_at": datetime.now(timezone.utc),
+    }
+    res = await db.user_foods.insert_one(food)
+    return {"success": True, "food_id": str(res.inserted_id)}
 
 # ==================== NUTRITION DASHBOARD ====================
 

@@ -238,13 +238,24 @@ export default function KitchenScreen() {
 
         {/* Quick Actions */}
         <Text style={[styles.section, { marginTop: 24 }]}>Log a meal</Text>
+
+        {/* Big Scan Food CTA */}
+        <TouchableOpacity
+          style={styles.scanCta}
+          onPress={() => router.push('/(auth)/meal-scanner')}
+          activeOpacity={0.85}
+        >
+          <View style={styles.scanCtaIcon}>
+            <Ionicons name="scan" size={28} color="#000" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.scanCtaTitle}>Scan Food</Text>
+            <Text style={styles.scanCtaSub}>Photo · Barcode · Label · Indian DB</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="#000" />
+        </TouchableOpacity>
+
         <View style={styles.actionsGrid}>
-          <ActionTile
-            icon="camera"
-            label="Snap & Log"
-            sub="Gemini AI"
-            onPress={() => router.push('/(auth)/meal-scanner')}
-          />
           <ActionTile
             icon="restaurant"
             label="Manual"
@@ -262,6 +273,12 @@ export default function KitchenScreen() {
             label="AI Chef"
             sub="Get a recipe"
             onPress={() => router.push('/(auth)/ai-chef')}
+          />
+          <ActionTile
+            icon="time"
+            label="History"
+            sub="Past meals"
+            onPress={() => router.push('/(auth)/history')}
           />
         </View>
 
@@ -399,6 +416,25 @@ const styles = StyleSheet.create({
   },
   waterBtnText: { color: WATER, fontWeight: '800', fontSize: 13 },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  scanCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: ACCENT,
+    borderRadius: 16,
+    padding: 16,
+    gap: 14,
+    marginBottom: 12,
+  },
+  scanCtaIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanCtaTitle: { color: '#000', fontSize: 18, fontWeight: '900', letterSpacing: 0.3 },
+  scanCtaSub: { color: 'rgba(0,0,0,0.7)', fontSize: 12, fontWeight: '600', marginTop: 2 },
   tile: {
     width: '48%',
     backgroundColor: CARD,

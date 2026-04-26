@@ -34,7 +34,7 @@ const DANGER = '#FF6B6B';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
-type Mode = 'photo' | 'barcode' | 'indian';
+type Mode = 'photo' | 'barcode' | 'label' | 'indian';
 interface ScanItem {
   name: string;
   weight_g: number;
@@ -102,6 +102,13 @@ export default function MealScanner() {
   // Barcode state
   const [barcode, setBarcode] = useState('');
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [barcodeProduct, setBarcodeProduct] = useState<any | null>(null);
+  const [barcodeServingG, setBarcodeServingG] = useState<string>('100');
+
+  // Label OCR state
+  const [labelImage, setLabelImage] = useState<string | null>(null);
+  const [labelOcr, setLabelOcr] = useState<any | null>(null);
+  const [labelLoading, setLabelLoading] = useState(false);
 
   // Indian foods
   const [indianQuery, setIndianQuery] = useState('');
@@ -239,44 +246,136 @@ export default function MealScanner() {
 
   const getCookingExtra = (id: string) => COOKING_METHODS.find((m) => m.id === id)?.kcal ?? 0;
 
-  // ---------- Barcode ----------
+  // ---------- Barcode (USDA + OFF fallback) ----------
   const lookupBarcode = async () => {
     if (!barcode.trim()) return;
     haptic();
     setBarcodeLoading(true);
+    setBarcodeProduct(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/pantry/scan-barcode`, {
+      const res = await fetch(`${BACKEND_URL}/api/scanner/usda-barcode`, {
         method: 'POST',
         headers: apiHeaders(),
         body: JSON.stringify({ barcode: barcode.trim() }),
       });
       const data = await res.json();
       if (data.success && data.product) {
-        const p = data.product;
-        setScanResult({
-          confidence: 0.95,
-          items: [
-            {
-              name: p.product_name || p.name || 'Product',
-              weight_g: 100,
-              calories: p.calories_per_100g || p.calories || 0,
-              protein_g: p.protein_per_100g || p.protein || 0,
-              carbs_g: p.carbs_per_100g || p.carbs || 0,
-              fat_g: p.fats_per_100g || p.fats || 0,
-              cooking: 'dry',
-            },
-          ],
-          uncertain: [],
-        });
+        setBarcodeProduct({ ...data.product, source: data.source });
+        setBarcodeServingG('100');
         haptic('success');
       } else {
-        Alert.alert('Not found', data.message || 'Product not in database');
+        Alert.alert('Not found', data.message || 'Product not in USDA or OFF database');
       }
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Network error');
     } finally {
       setBarcodeLoading(false);
     }
+  };
+
+  const addBarcodeProduct = () => {
+    if (!barcodeProduct) return;
+    const grams = parseFloat(barcodeServingG) || 100;
+    const ratio = grams / 100;
+    const newItem: ScanItem = {
+      name: `${barcodeProduct.name} (${grams}g)`,
+      weight_g: grams,
+      calories: Math.round((barcodeProduct.calories_per_100g || 0) * ratio),
+      protein_g: +((barcodeProduct.protein_per_100g || 0) * ratio).toFixed(1),
+      carbs_g: +((barcodeProduct.carbs_per_100g || 0) * ratio).toFixed(1),
+      fat_g: +((barcodeProduct.fats_per_100g || 0) * ratio).toFixed(1),
+      cooking: 'dry',
+    };
+    setScanResult((prev) => {
+      if (!prev) return { confidence: 0.95, items: [newItem], uncertain: [] };
+      return { ...prev, items: [...prev.items, newItem] };
+    });
+    setBarcodeProduct(null);
+    setBarcode('');
+    haptic('success');
+  };
+
+  // ---------- Label OCR ----------
+  const pickLabelImage = async (useCamera: boolean) => {
+    haptic();
+    if (useCamera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission required', 'Camera access is needed');
+        return;
+      }
+    }
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6 })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          base64: true,
+          quality: 0.6,
+        });
+    if (!result.canceled && result.assets[0]?.base64) {
+      setLabelImage(result.assets[0].base64);
+      setLabelOcr(null);
+      runLabelOcr(result.assets[0].base64);
+    }
+  };
+
+  const runLabelOcr = async (b64: string) => {
+    setLabelLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/scanner/label-ocr`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ image_base64: b64 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        haptic('success');
+        setLabelOcr(data);
+      } else {
+        Alert.alert('OCR failed', data.message || 'Could not read label');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Network error');
+    } finally {
+      setLabelLoading(false);
+    }
+  };
+
+  const confirmLabel = async () => {
+    if (!labelOcr) return;
+    // Save to personal foods
+    try {
+      await fetch(`${BACKEND_URL}/api/scanner/save-label`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          name: labelOcr.product_name || 'Custom Label Item',
+          calories: labelOcr.calories || 0,
+          protein_g: labelOcr.protein_g || 0,
+          carbs_g: labelOcr.carbs_g || 0,
+          fat_g: labelOcr.fat_g || 0,
+          serving_size: labelOcr.serving_size || '1 serving',
+        }),
+      });
+    } catch {
+      /* ignore */
+    }
+    const newItem: ScanItem = {
+      name: labelOcr.product_name || 'Label Item',
+      weight_g: 0,
+      calories: Math.round(labelOcr.calories || 0),
+      protein_g: +(labelOcr.protein_g || 0).toFixed(1),
+      carbs_g: +(labelOcr.carbs_g || 0).toFixed(1),
+      fat_g: +(labelOcr.fat_g || 0).toFixed(1),
+      cooking: 'dry',
+    };
+    setScanResult((prev) => {
+      if (!prev) return { confidence: labelOcr.confidence || 0.85, items: [newItem], uncertain: [] };
+      return { ...prev, items: [...prev.items, newItem] };
+    });
+    setLabelImage(null);
+    setLabelOcr(null);
+    haptic('success');
   };
 
   // ---------- Indian foods ----------
@@ -386,7 +485,7 @@ export default function MealScanner() {
 
         {/* Mode tabs */}
         <View style={styles.modeBar}>
-          {(['photo', 'barcode', 'indian'] as Mode[]).map((m) => (
+          {(['photo', 'barcode', 'label', 'indian'] as Mode[]).map((m) => (
             <TouchableOpacity
               key={m}
               style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
@@ -401,13 +500,15 @@ export default function MealScanner() {
                     ? 'camera'
                     : m === 'barcode'
                     ? 'barcode'
+                    : m === 'label'
+                    ? 'reader'
                     : 'restaurant'
                 }
-                size={16}
+                size={14}
                 color={mode === m ? '#000' : '#fff'}
               />
               <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-                {m === 'photo' ? 'Photo' : m === 'barcode' ? 'Barcode' : 'Indian'}
+                {m === 'photo' ? 'Photo' : m === 'barcode' ? 'Barcode' : m === 'label' ? 'Label' : 'Indian'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -469,9 +570,121 @@ export default function MealScanner() {
                   )}
                 </TouchableOpacity>
               </View>
-              <Text style={styles.hint}>
-                Powered by OpenFoodFacts (free) + USDA datasets (when available).
+              <Text style={styles.hint}>USDA FoodData Central + OpenFoodFacts fallback.</Text>
+
+              {barcodeProduct && (
+                <View style={[styles.itemCard, { marginTop: 18 }]}>
+                  <Text style={styles.itemName}>{barcodeProduct.name}</Text>
+                  {!!barcodeProduct.brand && (
+                    <Text style={styles.itemMacros}>{barcodeProduct.brand}</Text>
+                  )}
+                  <Text style={[styles.itemMacros, { marginTop: 6 }]}>
+                    Per 100g: {Math.round(barcodeProduct.calories_per_100g || 0)} kcal · P
+                    {(+(barcodeProduct.protein_per_100g || 0)).toFixed(1)}g · C
+                    {(+(barcodeProduct.carbs_per_100g || 0)).toFixed(1)}g · F
+                    {(+(barcodeProduct.fats_per_100g || 0)).toFixed(1)}g
+                  </Text>
+                  <Text style={[styles.portionLabel, { marginTop: 12 }]}>Serving (g)</Text>
+                  <View style={styles.portionRow}>
+                    <TextInput
+                      style={[styles.barcodeInput, { flex: 1 }]}
+                      value={barcodeServingG}
+                      onChangeText={setBarcodeServingG}
+                      keyboardType="decimal-pad"
+                      selectTextOnFocus
+                    />
+                  </View>
+                  <View style={styles.plateQuickRow}>
+                    {[50, 100, 150, 200, 250].map((g) => (
+                      <TouchableOpacity
+                        key={g}
+                        style={styles.plateQuick}
+                        onPress={() => setBarcodeServingG(String(g))}
+                      >
+                        <Text style={styles.plateQuickText}>{g}g</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.bigBtn, { marginTop: 12 }]}
+                    onPress={addBarcodeProduct}
+                  >
+                    <Ionicons name="add" size={20} color="#000" />
+                    <Text style={styles.bigBtnText}>Add to Meal</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* LABEL OCR MODE */}
+          {mode === 'label' && !scanResult && (
+            <View>
+              <Text style={styles.subtle}>
+                Snap a Nutrition Facts label and we&apos;ll extract calories &amp; macros.
               </Text>
+              {labelImage ? (
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${labelImage}` }}
+                  style={styles.preview}
+                />
+              ) : (
+                <View style={styles.placeholder}>
+                  <Ionicons name="reader-outline" size={48} color={TEXT_MUTED} />
+                  <Text style={styles.placeholderText}>Point at a Nutrition Facts label</Text>
+                </View>
+              )}
+              <View style={styles.row}>
+                <TouchableOpacity style={styles.bigBtn} onPress={() => pickLabelImage(true)}>
+                  <Ionicons name="camera" size={22} color="#000" />
+                  <Text style={styles.bigBtnText}>Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.bigBtn, styles.bigBtnAlt]} onPress={() => pickLabelImage(false)}>
+                  <Ionicons name="images" size={22} color={ACCENT} />
+                  <Text style={[styles.bigBtnText, { color: ACCENT }]}>Gallery</Text>
+                </TouchableOpacity>
+              </View>
+
+              {labelLoading && (
+                <View style={styles.scanningWrap}>
+                  <ActivityIndicator size="large" color={ACCENT} />
+                  <Text style={styles.scanningText}>Reading label…</Text>
+                </View>
+              )}
+
+              {labelOcr && !labelLoading && (
+                <View style={[styles.itemCard, { marginTop: 18 }]}>
+                  <Text style={styles.itemName}>
+                    {labelOcr.product_name || 'Detected Label'}
+                  </Text>
+                  <Text style={styles.itemMacros}>
+                    Confidence:{' '}
+                    <Text style={{ color: confidenceColor(labelOcr.confidence || 0.85) }}>
+                      {Math.round((labelOcr.confidence || 0.85) * 100)}%
+                    </Text>
+                  </Text>
+                  <Text style={[styles.itemMacros, { marginTop: 8 }]}>
+                    Per serving ({labelOcr.serving_size || '1 serving'}):
+                  </Text>
+                  <Text style={[styles.itemMacros, { color: '#fff', fontSize: 14 }]}>
+                    {Math.round(labelOcr.calories || 0)} kcal · P{(+(labelOcr.protein_g || 0)).toFixed(1)}g
+                    · C{(+(labelOcr.carbs_g || 0)).toFixed(1)}g · F{(+(labelOcr.fat_g || 0)).toFixed(1)}g
+                  </Text>
+                  {labelOcr.fiber_g != null && (
+                    <Text style={styles.itemMacros}>
+                      Fiber {labelOcr.fiber_g}g · Sugar {labelOcr.sugar_g || 0}g · Sodium{' '}
+                      {labelOcr.sodium_mg || 0}mg
+                    </Text>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.bigBtn, { marginTop: 12 }]}
+                    onPress={confirmLabel}
+                  >
+                    <Ionicons name="checkmark" size={20} color="#000" />
+                    <Text style={styles.bigBtnText}>Confirm &amp; Add to Meal</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 

@@ -343,14 +343,94 @@ frontend:
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 5
+  test_sequence: 6
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "TRACKD Scanner: USDA Barcode Lookup"
+    - "TRACKD Scanner: Gemini Food Photo Scan (direct API key)"
+    - "TRACKD Scanner: Gemini Label OCR"
+    - "TRACKD Scanner: Save Label as Personal Food"
+    - "TRACKD Scanner: Indian Foods DB (updated values)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+  - task: "TRACKD Scanner: USDA Barcode Lookup"
+    implemented: true
+    working: false
+    file: "backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoint POST /api/scanner/usda-barcode using user's USDA_API_KEY. Falls back to OpenFoodFacts when USDA returns no results."
+      - working: false
+        agent: "testing"
+        comment: "✅ Valid UPC 0070470496528 (Yoplait Oui yogurt): returns 200 success=true source=openfoodfacts (USDA had no hits → fallback worked). Product fields all present (name, calories_per_100g=121, protein=3.55, carbs=12.77, fats=5.67). ✅ Missing barcode → 400 'Barcode required'. ✅ No auth → 401. ❌ BUG: invalid barcode '0000000000000' returns 200 with success=true and an UNRELATED academic paper as the 'product' (\"A comprehensive characterization of phenolics, amino acids and other minor bioactives of selected honeys...\"). Root cause: backend passes barcode as USDA `/foods/search?query=...` text search, which fuzzy-matches any document containing those characters. Expected: success=false, message 'not found'. Fix: either (a) call USDA only when barcode is the actual GTIN (validate len 8/12/13/14 and use `dataType=Branded` + `query=gtinUpc:<barcode>` syntax), OR (b) post-filter foods[] to only those whose `gtinUpc` field == request.barcode before returning. Currently any 13-digit string of zeros (or any non-matching UPC) will return random USDA documents as if they were the product, which is a real user-facing data integrity issue."
+
+  - task: "TRACKD Scanner: Gemini Food Photo Scan (direct API key)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Direct Gemini 2.5 Flash REST call using user's GEMINI_API_KEY. Applies Indian-food override mapping."
+      - working: true
+        agent: "testing"
+        comment: "✅ POST /api/scanner/gemini-food with tiny dummy 1x1 JPEG returns 200 success=true with full structure: confidence=0.0 (number), items=[] (list, empty for blank image as expected), total={calories:0, protein_g:0, carbs_g:0, fat_g:0}, uncertain_items=[]. Real GEMINI_API_KEY successfully called (verified in backend logs: gemini-2.5-flash:generateContent 200 OK). All required response keys present and correctly typed. Indian-food override structure intact in code (cannot be triggered with blank image but mapping logic is exercised in items loop). ✅ No auth → 401."
+
+  - task: "TRACKD Scanner: Gemini Label OCR"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/scanner/label-ocr reads Nutrition Facts labels via Gemini 2.5 Flash."
+      - working: true
+        agent: "testing"
+        comment: "✅ POST /api/scanner/label-ocr with tiny dummy 1x1 JPEG returns 200 success=true with all expected fields: product_name (null - acceptable for blank), serving_size ('0' string), calories=0, protein_g=0, carbs_g=0, fat_g=0, saturated_fat_g/fiber_g/sugar_g/sodium_mg (null), confidence=0. Real GEMINI_API_KEY call verified in backend logs (200 OK). JSON parsing works. ✅ No auth → 401."
+
+  - task: "TRACKD Scanner: Save Label as Personal Food"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/scanner/save-label persists OCR'd label to user_foods collection."
+      - working: true
+        agent: "testing"
+        comment: "✅ POST /api/scanner/save-label with {name:'Test Bar', calories:200, protein_g:15, carbs_g:20, fat_g:8} returns 200 success=true food_id='69ee8f7b80ce116b3c3bc3ec' (non-empty string). Persisted to user_foods collection. ✅ No auth → 401."
+
+  - task: "TRACKD Scanner: Indian Foods DB (updated values)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "INDIAN_FOODS_DB updated to user's exact spec values: Dal Tadka 290 cal/serving, Paneer 321 cal/100g, etc."
+      - working: true
+        agent: "testing"
+        comment: "✅ GET /api/scanner/indian-foods returns updated DB. All 6 spec items verified: Dal Tadka (290cal, 18p, 40c, 6f, per_100g=false), Roti/Chapati (297, 9.7, 53, 3.7, per_100g=true), Paneer (321, 18.3, 3.1, 25, per_100g=true), Chicken Biryani (490, 26, 63, 14 per 350g serving), Idli (58, 2, 12.2, 0.4, per_100g=false), Samosa (262, 4.4, 30.1, 14.9, per_100g=true). All 30 field assertions passed."
 
   - task: "AI Chef Meal Suggestions API"
     implemented: true
@@ -378,5 +458,7 @@ agent_communication:
     message: "AI Chef Meal Suggestions API testing completed successfully. ✅ POST /api/pantry/ai-chef/suggest endpoint working correctly with proper authentication (401 without Bearer token), GPT-4o LLM integration functional, returns valid JSON response with success=true, meals array containing 2 realistic meal suggestions using pantry items (Chicken Breast, Brown Rice, Eggs, Broccoli), proper macros calculation, remaining nutrition goals, and pantry_items_used count. Response structure matches all expected fields. Fixed LLM integration issue (UserMessage object requirement) during testing. Created test user with pantry items as specified in review request. All functionality verified and working as designed."
   - agent: "testing"
     message: "Enhanced AI Chef Recipe API comprehensive testing completed successfully. ✅ All validation checks passed (14/14). Created test user test-user-recipe-1775063605127 with 5 pantry items (Chicken Breast, Brown Rice, Eggs, Olive Oil, Broccoli) as specified in review request. ✅ Authentication working correctly (401 for unauthenticated, accepts Bearer token). ✅ Enhanced response structure fully validated: success=true, meals array with 2 detailed meal suggestions, each containing name, ingredients with quantities, step-by-step recipe instructions, cook_time in minutes, complete macros breakdown. ✅ Business logic: remaining macros object, pantry_items_used=5. ✅ LLM integration: GPT-4o generating realistic meals ('Grilled Chicken and Broccoli with Brown Rice', 'Egg Fried Rice with Chicken and Broccoli') using all pantry items. All enhanced features working as designed. API ready for production use."
+  - agent: "testing"
+    message: "TRACKD Scanner endpoints tested (5 endpoints, 68 assertions, 66 passed). Test session test_session_trackd_1777237904201 verified valid (Alex / trackd-test@example.com). ✅ POST /api/scanner/usda-barcode with Yoplait UPC 0070470496528 → 200, success=true, source=openfoodfacts (USDA had no hits, fallback worked), full product object returned. ✅ Missing barcode → 400. ✅ No auth → 401 on all 4 protected scanner endpoints. ✅ POST /api/scanner/label-ocr with tiny dummy 1x1 JPEG → 200, success=true, all 13 schema fields present (product_name=null, serving_size, calories, protein_g, carbs_g, fat_g, confidence, etc.). Real GEMINI_API_KEY call confirmed in logs. ✅ POST /api/scanner/gemini-food with same dummy → 200, success=true, items=[], total/uncertain_items present, confidence=0.0. ✅ POST /api/scanner/save-label persists to user_foods, returns food_id. ✅ GET /api/scanner/indian-foods all 6 spec items (Dal Tadka, Roti, Paneer, Chicken Biryani, Idli, Samosa) verified to exact macro values per request - 30/30 field assertions pass. ❌ BUG FOUND in /api/scanner/usda-barcode: invalid barcode '0000000000000' returns 200 success=true with an UNRELATED USDA document (academic paper on honey phenolics) as the 'product' instead of success=false 'not found'. Root cause: backend uses USDA `/foods/search?query=<barcode>` which is fuzzy text search, not GTIN lookup; '0000000000000' loosely matches docs containing zeros. Fix: post-filter foods[] to require gtinUpc==barcode, OR validate barcode is a real GTIN (8/12/13/14 digits, not all-zeros) before calling USDA, OR use `dataType=Branded` with `query=gtinUpc:<barcode>` syntax. Currently any non-existent UPC returns garbage USDA docs as if they were the matching product - real data integrity issue for the scanner UX. Other 4 scanner endpoints fully working."
   - agent: "testing"
     message: "TRACKD pivot backend testing completed - ALL 65 ASSERTIONS PASSED across 6 new feature areas. Created test user trackd-test@example.com with session test_session_trackd_1777237904201 via mongosh. ✅ Onboarding (POST/GET): Verified Mifflin-St Jeor BMR=1790 for John (28M, 80kg, 180cm), TDEE=2775 (1790*1.55), goal_calories=3025 (build_muscle +250), protein=160g (2g/kg). Initial measurement auto-created. ✅ Body Measurements: GET history (initial weight from onboarding), POST new (79.5kg, chest 105, waist 85, neck 40), GET weight history. ✅ Exercise Library: GET /library returns 7 muscle groups + total count, search by q=bench filters correctly, search by muscle_group=chest returns chest-only results. ✅ Personal Records: GET /prs returns records list, GET /prs/{name} returns {current_pr, one_rm_history}. ✅ Templates: 7 presets verified (Push Day, Pull Day, Leg Day, Upper Body, Lower Body, Full Body, PPL), POST creates user template, DELETE works for created template, returns 404 for nonexistent. ✅ Plate Calculator: 100kg→[25,15] per side, 20kg→[], 10kg→error, 135lbs→[45]. All auth gates (401) verified on protected endpoints. /library and /plate-calculator are intentionally public utilities. No bugs found."
