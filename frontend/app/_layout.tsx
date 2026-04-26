@@ -14,10 +14,20 @@ interface User {
   name: string;
   picture?: string;
   weight?: number;
+  weight_kg?: number;
+  height_cm?: number;
+  age?: number;
+  biological_sex?: string;
+  activity_level?: string;
+  goal_type?: string;
+  sport?: string;
+  bmr?: number;
+  tdee?: number;
   goal_calories: number;
   goal_protein: number;
   goal_carbs: number;
   goal_fats: number;
+  onboarding_complete?: boolean;
 }
 
 interface AuthContextType {
@@ -125,7 +135,11 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json();
         setUser(data.user);
         setSessionToken(data.session_token);
-        router.replace('/(auth)/dashboard');
+        if (data.user?.onboarding_complete) {
+          router.replace('/(auth)/dashboard');
+        } else {
+          router.replace('/onboarding');
+        }
       } else {
         console.error('Session exchange failed');
         router.replace('/');
@@ -162,11 +176,27 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!navigationState?.key || isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const inOnboarding = segments[0] === 'onboarding';
 
-    if (!user && inAuthGroup) {
-      router.replace('/');
-    } else if (user && !inAuthGroup && segments[0] !== '+not-found') {
-      router.replace('/(auth)/dashboard');
+    if (!user) {
+      // Not logged in: only login screen allowed
+      if (inAuthGroup || inOnboarding) {
+        router.replace('/');
+      }
+      return;
+    }
+
+    // Logged in
+    if (!user.onboarding_complete) {
+      // Force onboarding
+      if (!inOnboarding) {
+        router.replace('/onboarding');
+      }
+    } else {
+      // Onboarded: shouldn't be on login or onboarding
+      if (!inAuthGroup && segments[0] !== '+not-found') {
+        router.replace('/(auth)/dashboard');
+      }
     }
   }, [user, segments, isLoading, navigationState?.key]);
 

@@ -30,33 +30,33 @@ export default function LoginScreen() {
         {/* Logo/Icon */}
         <View style={styles.logoContainer}>
           <View style={styles.logoCircle}>
-            <Ionicons name="fitness" size={64} color={ACCENT_COLOR} />
+            <Ionicons name="flash" size={56} color={ACCENT_COLOR} />
           </View>
         </View>
 
         {/* Title */}
-        <Text style={styles.title}>Fitness</Text>
-        <Text style={styles.subtitle}>Command Center</Text>
+        <Text style={styles.title}>TRACKD</Text>
+        <Text style={styles.subtitle}>Train. Eat. Repeat.</Text>
 
         {/* Tagline */}
         <Text style={styles.tagline}>
-          Track your workouts with precision.
-          {"\n"}Build discipline. Get stronger.
+          Your personal training & nutrition OS.
+          {"\n"}Every set. Every macro. Every day.
         </Text>
 
         {/* Features */}
         <View style={styles.featuresContainer}>
           <View style={styles.feature}>
             <Ionicons name="barbell-outline" size={24} color={ACCENT_COLOR} />
-            <Text style={styles.featureText}>Smart Workout Logging</Text>
+            <Text style={styles.featureText}>Strong-style Workout Logger</Text>
           </View>
           <View style={styles.feature}>
-            <Ionicons name="timer-outline" size={24} color={ACCENT_COLOR} />
-            <Text style={styles.featureText}>Rest Timer with Haptics</Text>
+            <Ionicons name="flame-outline" size={24} color={ACCENT_COLOR} />
+            <Text style={styles.featureText}>Smart Macro & TDEE Tracking</Text>
           </View>
           <View style={styles.feature}>
-            <Ionicons name="copy-outline" size={24} color={ACCENT_COLOR} />
-            <Text style={styles.featureText}>Copy Previous Sets</Text>
+            <Ionicons name="trophy-outline" size={24} color={ACCENT_COLOR} />
+            <Text style={styles.featureText}>Auto PR Detection & 1RM Charts</Text>
           </View>
         </View>
 
@@ -109,16 +109,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 42,
-    fontWeight: '800',
+    fontSize: 56,
+    fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: 1,
+    letterSpacing: 4,
   },
   subtitle: {
-    fontSize: 24,
-    fontWeight: '300',
+    fontSize: 16,
+    fontWeight: '500',
     color: ACCENT_COLOR,
     marginBottom: 16,
+    letterSpacing: 1,
   },
   tagline: {
     fontSize: 16,

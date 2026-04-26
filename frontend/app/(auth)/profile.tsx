@@ -198,7 +198,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* App Version */}
-        <Text style={styles.version}>Fitness Command Center v1.0.0</Text>
+        <Text style={styles.version}>TRACKD v1.0.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
