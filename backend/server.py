@@ -21,7 +21,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Create the main app
-app = FastAPI(title="Fitness Command Center API")
+app = FastAPI(title="TRACKD API")
 
 # Create routers
 api_router = APIRouter(prefix="/api")
@@ -31,6 +31,9 @@ exercise_router = APIRouter(prefix="/exercises", tags=["exercises"])
 nutrition_router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 user_router = APIRouter(prefix="/users", tags=["users"])
 pantry_router = APIRouter(prefix="/pantry", tags=["pantry"])
+onboarding_router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+measurements_router = APIRouter(prefix="/measurements", tags=["measurements"])
+templates_router = APIRouter(prefix="/templates", tags=["templates"])
 
 # Configure logging
 logging.basicConfig(
@@ -46,19 +49,69 @@ class User(BaseModel):
     email: str
     name: str
     picture: Optional[str] = ""
-    weight: Optional[float] = None
-    height: Optional[float] = None  # in cm
+    # Onboarding data
+    onboarding_complete: bool = False
     age: Optional[int] = None
-    gender: Optional[str] = None  # 'male', 'female', 'other'
-    activity_level: Optional[str] = "moderate"  # sedentary, light, moderate, active, very_active
-    goal_type: str = "maintenance"  # cutting, maintenance, bulking
+    biological_sex: Optional[str] = None  # 'male', 'female'
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    activity_level: Optional[str] = None  # sedentary, lightly_active, moderately_active, very_active, extra_active
+    goal_type: Optional[str] = None  # lose_fat, maintain, build_muscle
+    sport: Optional[str] = None
+    # Calculated values
+    bmr: Optional[float] = None
+    tdee: Optional[float] = None
     goal_calories: int = 2200
     goal_protein: int = 150  # grams
     goal_carbs: int = 250  # grams
     goal_fats: int = 70  # grams
-    protein_percent: int = 30
-    carbs_percent: int = 40
-    fats_percent: int = 30
+    # Unit preferences
+    use_metric_weight: bool = True
+    use_metric_height: bool = True
+    # Timestamps
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class OnboardingData(BaseModel):
+    name: str
+    age: int
+    biological_sex: str  # 'male', 'female'
+    height_cm: float
+    weight_kg: float
+    activity_level: str
+    goal_type: str
+    sport: Optional[str] = None
+
+class BodyMeasurement(BaseModel):
+    measurement_id: str = Field(default_factory=lambda: f"bm_{uuid.uuid4().hex[:12]}")
+    user_id: str
+    date: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    weight_kg: Optional[float] = None
+    neck_cm: Optional[float] = None
+    chest_cm: Optional[float] = None
+    waist_cm: Optional[float] = None
+    hips_cm: Optional[float] = None
+    left_arm_cm: Optional[float] = None
+    right_arm_cm: Optional[float] = None
+    left_thigh_cm: Optional[float] = None
+    right_thigh_cm: Optional[float] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class PersonalRecord(BaseModel):
+    pr_id: str = Field(default_factory=lambda: f"pr_{uuid.uuid4().hex[:12]}")
+    user_id: str
+    exercise_name: str
+    weight: float
+    reps: int
+    one_rm: float  # Calculated 1RM
+    achieved_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    workout_id: Optional[str] = None
+
+class WorkoutTemplate(BaseModel):
+    template_id: str = Field(default_factory=lambda: f"tmpl_{uuid.uuid4().hex[:12]}")
+    user_id: Optional[str] = None  # None for pre-built templates
+    name: str
+    exercises: List[dict] = []
+    is_preset: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserSession(BaseModel):
@@ -1474,6 +1527,520 @@ async def log_meal_from_analysis(
         logger.error(f"Error logging meal from analysis: {e}")
         raise HTTPException(status_code=500, detail=f"Error logging meal: {str(e)}")
 
+# ==================== EXERCISE LIBRARY ====================
+
+EXERCISE_LIBRARY = {
+    "chest": [
+        "Bench Press", "Incline Bench Press", "Decline Bench Press", "Dumbbell Bench Press",
+        "Incline Dumbbell Press", "Dumbbell Fly", "Cable Fly", "Pec Deck", "Push Up",
+        "Diamond Push Up", "Wide Push Up", "Chest Dip", "Machine Chest Press",
+        "Landmine Press", "Floor Press", "Svend Press"
+    ],
+    "back": [
+        "Deadlift", "Barbell Row", "Dumbbell Row", "Pendlay Row", "T-Bar Row",
+        "Cable Row", "Lat Pulldown", "Pull Up", "Chin Up", "Assisted Pull Up",
+        "Face Pull", "Straight Arm Pulldown", "Shrug", "Rack Pull", "Good Morning",
+        "Hyperextension", "Reverse Fly", "Inverted Row", "Meadows Row"
+    ],
+    "shoulders": [
+        "Overhead Press", "Military Press", "Dumbbell Shoulder Press", "Arnold Press",
+        "Lateral Raise", "Front Raise", "Rear Delt Fly", "Upright Row",
+        "Cable Lateral Raise", "Machine Shoulder Press", "Push Press",
+        "Behind Neck Press", "Bradford Press", "Lu Raise", "Y Raise"
+    ],
+    "arms": [
+        "Barbell Curl", "Dumbbell Curl", "Hammer Curl", "Preacher Curl", "EZ Bar Curl",
+        "Concentration Curl", "Cable Curl", "Spider Curl", "Incline Curl", "21s",
+        "Tricep Pushdown", "Overhead Tricep Extension", "Skull Crusher", "Close Grip Bench",
+        "Tricep Dip", "Diamond Push Up", "Kickback", "JM Press", "Tate Press",
+        "Wrist Curl", "Reverse Curl", "Farmer Walk"
+    ],
+    "legs": [
+        "Squat", "Front Squat", "Leg Press", "Hack Squat", "Goblet Squat",
+        "Bulgarian Split Squat", "Lunge", "Walking Lunge", "Step Up", "Box Jump",
+        "Leg Extension", "Leg Curl", "Romanian Deadlift", "Stiff Leg Deadlift",
+        "Sumo Deadlift", "Hip Thrust", "Glute Bridge", "Cable Pull Through",
+        "Good Morning", "Nordic Curl", "Sissy Squat", "Calf Raise", "Seated Calf Raise"
+    ],
+    "core": [
+        "Plank", "Side Plank", "Crunch", "Sit Up", "Russian Twist", "Leg Raise",
+        "Hanging Leg Raise", "Ab Wheel Rollout", "Cable Crunch", "Pallof Press",
+        "Dead Bug", "Bird Dog", "Mountain Climber", "Bicycle Crunch",
+        "Toe Touch", "V Up", "Dragon Flag", "L Sit", "Hollow Hold"
+    ],
+    "cardio": [
+        "Running", "Treadmill", "Cycling", "Stationary Bike", "Rowing Machine",
+        "Elliptical", "Stair Climber", "Jump Rope", "Swimming", "Battle Ropes",
+        "Burpee", "Box Jump", "Jumping Jack", "High Knees", "Mountain Climber",
+        "Assault Bike", "Sprints", "HIIT", "Walking"
+    ]
+}
+
+@exercise_router.get("/library")
+async def get_exercise_library():
+    """Get the full exercise library organized by muscle group."""
+    return {
+        "library": EXERCISE_LIBRARY,
+        "total_exercises": sum(len(exercises) for exercises in EXERCISE_LIBRARY.values())
+    }
+
+@exercise_router.get("/library/search")
+async def search_exercises(
+    q: str = "",
+    muscle_group: Optional[str] = None,
+    user: User = Depends(get_current_user)
+):
+    """Search exercises by name or filter by muscle group."""
+    results = []
+    
+    for group, exercises in EXERCISE_LIBRARY.items():
+        if muscle_group and group != muscle_group:
+            continue
+        for exercise in exercises:
+            if not q or q.lower() in exercise.lower():
+                results.append({
+                    "name": exercise,
+                    "muscle_group": group
+                })
+    
+    # Also get user's custom exercises
+    user_exercises = await db.workouts.aggregate([
+        {"$match": {"user_id": user.user_id}},
+        {"$unwind": "$exercises"},
+        {"$group": {"_id": "$exercises.exercise_name"}},
+        {"$limit": 50}
+    ]).to_list(50)
+    
+    for ex in user_exercises:
+        name = ex["_id"]
+        # Check if not already in library
+        is_in_library = any(name.lower() == e.lower() for exercises in EXERCISE_LIBRARY.values() for e in exercises)
+        if not is_in_library and (not q or q.lower() in name.lower()):
+            results.append({
+                "name": name,
+                "muscle_group": "custom"
+            })
+    
+    return {"exercises": results[:50]}
+
+# ==================== ONBOARDING ROUTES ====================
+
+ACTIVITY_MULTIPLIERS = {
+    "sedentary": 1.2,
+    "lightly_active": 1.375,
+    "moderately_active": 1.55,
+    "very_active": 1.725,
+    "extra_active": 1.9
+}
+
+GOAL_ADJUSTMENTS = {
+    "lose_fat": -400,
+    "maintain": 0,
+    "build_muscle": 250
+}
+
+def calculate_macros(weight_kg: float, tdee: float, goal_calories: int):
+    """Calculate macro targets based on goals."""
+    protein = round(weight_kg * 2.0)  # 2g per kg
+    fat_calories = goal_calories * 0.25
+    fat = round(fat_calories / 9)
+    remaining_calories = goal_calories - (protein * 4) - fat_calories
+    carbs = round(remaining_calories / 4)
+    return protein, carbs, fat
+
+@onboarding_router.post("/complete")
+async def complete_onboarding(
+    data: OnboardingData,
+    user: User = Depends(get_current_user)
+):
+    """Complete user onboarding and calculate TDEE."""
+    # Calculate BMR using Mifflin-St Jeor
+    if data.biological_sex == "male":
+        bmr = (10 * data.weight_kg) + (6.25 * data.height_cm) - (5 * data.age) + 5
+    else:
+        bmr = (10 * data.weight_kg) + (6.25 * data.height_cm) - (5 * data.age) - 161
+    
+    # Calculate TDEE
+    multiplier = ACTIVITY_MULTIPLIERS.get(data.activity_level, 1.55)
+    tdee = bmr * multiplier
+    
+    # Adjust for goal
+    goal_adjustment = GOAL_ADJUSTMENTS.get(data.goal_type, 0)
+    goal_calories = round(tdee + goal_adjustment)
+    
+    # Calculate macros
+    protein, carbs, fats = calculate_macros(data.weight_kg, tdee, goal_calories)
+    
+    # Update user
+    update_data = {
+        "name": data.name,
+        "age": data.age,
+        "biological_sex": data.biological_sex,
+        "height_cm": data.height_cm,
+        "weight_kg": data.weight_kg,
+        "activity_level": data.activity_level,
+        "goal_type": data.goal_type,
+        "sport": data.sport,
+        "bmr": round(bmr),
+        "tdee": round(tdee),
+        "goal_calories": goal_calories,
+        "goal_protein": protein,
+        "goal_carbs": carbs,
+        "goal_fats": fats,
+        "onboarding_complete": True
+    }
+    
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": update_data}
+    )
+    
+    # Create initial body measurement
+    measurement = BodyMeasurement(
+        user_id=user.user_id,
+        weight_kg=data.weight_kg
+    )
+    await db.measurements.insert_one(measurement.dict())
+    
+    return {
+        "success": True,
+        "bmr": round(bmr),
+        "tdee": round(tdee),
+        "goal_calories": goal_calories,
+        "macros": {
+            "protein": protein,
+            "carbs": carbs,
+            "fats": fats
+        }
+    }
+
+@onboarding_router.get("/status")
+async def get_onboarding_status(user: User = Depends(get_current_user)):
+    """Check if user has completed onboarding."""
+    user_doc = await db.users.find_one(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    )
+    return {
+        "onboarding_complete": user_doc.get("onboarding_complete", False)
+    }
+
+# ==================== MEASUREMENTS ROUTES ====================
+
+@measurements_router.get("")
+async def get_measurements(
+    limit: int = 30,
+    user: User = Depends(get_current_user)
+):
+    """Get user's body measurements history."""
+    measurements = await db.measurements.find(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    ).sort("date", -1).to_list(limit)
+    return {"measurements": measurements}
+
+@measurements_router.post("")
+async def add_measurement(
+    measurement_data: dict,
+    user: User = Depends(get_current_user)
+):
+    """Add a new body measurement."""
+    measurement = BodyMeasurement(
+        user_id=user.user_id,
+        **measurement_data
+    )
+    await db.measurements.insert_one(measurement.dict())
+    return measurement.dict()
+
+@measurements_router.get("/weight")
+async def get_weight_history(
+    days: int = 30,
+    user: User = Depends(get_current_user)
+):
+    """Get weight history for graphing."""
+    measurements = await db.measurements.find(
+        {"user_id": user.user_id, "weight_kg": {"$ne": None}},
+        {"_id": 0, "date": 1, "weight_kg": 1}
+    ).sort("date", -1).to_list(days)
+    return {"weights": measurements}
+
+# ==================== PERSONAL RECORDS ROUTES ====================
+
+@exercise_router.get("/prs")
+async def get_personal_records(
+    limit: int = 10,
+    user: User = Depends(get_current_user)
+):
+    """Get recent personal records."""
+    prs = await db.personal_records.find(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    ).sort("achieved_at", -1).to_list(limit)
+    return {"records": prs}
+
+@exercise_router.get("/prs/{exercise_name}")
+async def get_exercise_pr(
+    exercise_name: str,
+    user: User = Depends(get_current_user)
+):
+    """Get PR for a specific exercise."""
+    pr = await db.personal_records.find_one(
+        {"user_id": user.user_id, "exercise_name": {"$regex": f"^{exercise_name}$", "$options": "i"}},
+        {"_id": 0}
+    )
+    
+    # Calculate estimated 1RM history
+    workouts = await db.workouts.find(
+        {
+            "user_id": user.user_id,
+            "completed_at": {"$ne": None},
+            "exercises.exercise_name": {"$regex": f"^{exercise_name}$", "$options": "i"}
+        },
+        {"_id": 0}
+    ).sort("completed_at", -1).to_list(30)
+    
+    one_rm_history = []
+    for workout in workouts:
+        for exercise in workout.get("exercises", []):
+            if exercise["exercise_name"].lower() == exercise_name.lower():
+                max_one_rm = 0
+                for set_data in exercise.get("sets", []):
+                    if set_data.get("completed") and set_data.get("weight", 0) > 0:
+                        # Epley formula: 1RM = weight × (1 + reps/30)
+                        weight = set_data["weight"]
+                        reps = set_data.get("reps", 1)
+                        one_rm = weight * (1 + reps / 30)
+                        if one_rm > max_one_rm:
+                            max_one_rm = one_rm
+                if max_one_rm > 0:
+                    one_rm_history.append({
+                        "date": workout.get("completed_at"),
+                        "one_rm": round(max_one_rm, 1)
+                    })
+    
+    return {
+        "current_pr": pr,
+        "one_rm_history": one_rm_history
+    }
+
+async def check_and_record_pr(user_id: str, exercise_name: str, weight: float, reps: int, workout_id: str):
+    """Check if this set is a PR and record it."""
+    # Calculate 1RM
+    one_rm = weight * (1 + reps / 30)
+    
+    # Get existing PR
+    existing_pr = await db.personal_records.find_one(
+        {"user_id": user_id, "exercise_name": {"$regex": f"^{exercise_name}$", "$options": "i"}}
+    )
+    
+    is_pr = False
+    if not existing_pr or one_rm > existing_pr.get("one_rm", 0):
+        # New PR!
+        pr = PersonalRecord(
+            user_id=user_id,
+            exercise_name=exercise_name,
+            weight=weight,
+            reps=reps,
+            one_rm=round(one_rm, 1),
+            workout_id=workout_id
+        )
+        
+        if existing_pr:
+            await db.personal_records.update_one(
+                {"_id": existing_pr["_id"]},
+                {"$set": pr.dict()}
+            )
+        else:
+            await db.personal_records.insert_one(pr.dict())
+        
+        is_pr = True
+    
+    return is_pr, round(one_rm, 1)
+
+# ==================== WORKOUT TEMPLATES ROUTES ====================
+
+PRESET_TEMPLATES = [
+    {
+        "template_id": "preset_push",
+        "name": "Push Day",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Bench Press", "sets": 4},
+            {"exercise_name": "Overhead Press", "sets": 3},
+            {"exercise_name": "Incline Dumbbell Press", "sets": 3},
+            {"exercise_name": "Lateral Raise", "sets": 3},
+            {"exercise_name": "Tricep Pushdown", "sets": 3}
+        ]
+    },
+    {
+        "template_id": "preset_pull",
+        "name": "Pull Day",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Deadlift", "sets": 3},
+            {"exercise_name": "Barbell Row", "sets": 4},
+            {"exercise_name": "Lat Pulldown", "sets": 3},
+            {"exercise_name": "Face Pull", "sets": 3},
+            {"exercise_name": "Barbell Curl", "sets": 3}
+        ]
+    },
+    {
+        "template_id": "preset_legs",
+        "name": "Leg Day",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Squat", "sets": 4},
+            {"exercise_name": "Romanian Deadlift", "sets": 3},
+            {"exercise_name": "Leg Press", "sets": 3},
+            {"exercise_name": "Leg Curl", "sets": 3},
+            {"exercise_name": "Calf Raise", "sets": 4}
+        ]
+    },
+    {
+        "template_id": "preset_upper",
+        "name": "Upper Body",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Bench Press", "sets": 4},
+            {"exercise_name": "Barbell Row", "sets": 4},
+            {"exercise_name": "Overhead Press", "sets": 3},
+            {"exercise_name": "Lat Pulldown", "sets": 3},
+            {"exercise_name": "Dumbbell Curl", "sets": 3}
+        ]
+    },
+    {
+        "template_id": "preset_lower",
+        "name": "Lower Body",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Squat", "sets": 4},
+            {"exercise_name": "Romanian Deadlift", "sets": 4},
+            {"exercise_name": "Leg Press", "sets": 3},
+            {"exercise_name": "Leg Extension", "sets": 3},
+            {"exercise_name": "Leg Curl", "sets": 3}
+        ]
+    },
+    {
+        "template_id": "preset_fullbody",
+        "name": "Full Body",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Squat", "sets": 3},
+            {"exercise_name": "Bench Press", "sets": 3},
+            {"exercise_name": "Barbell Row", "sets": 3},
+            {"exercise_name": "Overhead Press", "sets": 3},
+            {"exercise_name": "Romanian Deadlift", "sets": 3}
+        ]
+    },
+    {
+        "template_id": "preset_ppl",
+        "name": "PPL",
+        "is_preset": True,
+        "exercises": [
+            {"exercise_name": "Squat", "sets": 4},
+            {"exercise_name": "Bench Press", "sets": 4},
+            {"exercise_name": "Barbell Row", "sets": 4},
+            {"exercise_name": "Overhead Press", "sets": 3},
+            {"exercise_name": "Deadlift", "sets": 3}
+        ]
+    }
+]
+
+@templates_router.get("")
+async def get_templates(user: User = Depends(get_current_user)):
+    """Get all workout templates (preset + user created)."""
+    user_templates = await db.workout_templates.find(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    ).to_list(50)
+    
+    return {
+        "presets": PRESET_TEMPLATES,
+        "user_templates": user_templates
+    }
+
+@templates_router.post("")
+async def save_template(
+    template_data: dict,
+    user: User = Depends(get_current_user)
+):
+    """Save a workout as a template."""
+    template = WorkoutTemplate(
+        user_id=user.user_id,
+        name=template_data.get("name", "My Template"),
+        exercises=template_data.get("exercises", []),
+        is_preset=False
+    )
+    
+    await db.workout_templates.insert_one(template.dict())
+    return template.dict()
+
+@templates_router.delete("/{template_id}")
+async def delete_template(
+    template_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Delete a user template."""
+    result = await db.workout_templates.delete_one(
+        {"template_id": template_id, "user_id": user.user_id}
+    )
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    return {"message": "Template deleted"}
+
+# ==================== PLATE CALCULATOR ====================
+
+PLATE_WEIGHTS_KG = [25, 20, 15, 10, 5, 2.5, 1.25]
+PLATE_WEIGHTS_LBS = [45, 35, 25, 10, 5, 2.5]
+BARBELL_WEIGHT_KG = 20
+BARBELL_WEIGHT_LBS = 45
+
+PLATE_COLORS = {
+    25: "#FF0000",   # Red
+    20: "#0066FF",   # Blue
+    15: "#FFFF00",   # Yellow
+    10: "#00FF00",   # Green
+    5: "#FFFFFF",    # White
+    2.5: "#000000",  # Black
+    1.25: "#888888", # Grey
+    45: "#0066FF",   # Blue (lbs)
+    35: "#FFFF00",   # Yellow (lbs)
+}
+
+@exercise_router.get("/plate-calculator")
+async def calculate_plates(
+    weight: float,
+    unit: str = "kg"
+):
+    """Calculate which plates to load on each side of the barbell."""
+    barbell = BARBELL_WEIGHT_KG if unit == "kg" else BARBELL_WEIGHT_LBS
+    plates = PLATE_WEIGHTS_KG if unit == "kg" else PLATE_WEIGHTS_LBS
+    
+    if weight < barbell:
+        return {"error": f"Weight must be at least {barbell}{unit} (barbell weight)"}
+    
+    weight_per_side = (weight - barbell) / 2
+    plates_per_side = []
+    
+    remaining = weight_per_side
+    for plate in plates:
+        while remaining >= plate:
+            plates_per_side.append({
+                "weight": plate,
+                "color": PLATE_COLORS.get(plate, "#888888")
+            })
+            remaining -= plate
+    
+    return {
+        "total_weight": weight,
+        "barbell_weight": barbell,
+        "per_side": weight_per_side,
+        "plates_per_side": plates_per_side,
+        "unit": unit
+    }
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")
@@ -1491,6 +2058,9 @@ api_router.include_router(exercise_router)
 api_router.include_router(nutrition_router)
 api_router.include_router(user_router)
 api_router.include_router(pantry_router)
+api_router.include_router(onboarding_router)
+api_router.include_router(measurements_router)
+api_router.include_router(templates_router)
 app.include_router(api_router)
 
 # CORS middleware

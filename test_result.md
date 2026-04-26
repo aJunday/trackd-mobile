@@ -238,15 +238,104 @@ frontend:
         agent: "testing"
         comment: "Frontend testing not performed as per testing agent instructions - only backend testing requested"
 
+  - task: "TRACKD Onboarding API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoints added for TRACKD pivot. POST /api/onboarding/complete (calculates BMR via Mifflin-St Jeor, TDEE via activity multiplier, goal calories via goal type, macros via 2g/kg protein/25% fat). GET /api/onboarding/status (returns onboarding_complete flag). Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "✅ All onboarding tests passed. Created test user trackd-test@example.com. POST /api/onboarding/complete with John (28M, 180cm, 80kg, moderately_active, build_muscle) correctly returns success=true, bmr=1790 (Mifflin-St Jeor verified), tdee=2775 (1790*1.55), goal_calories=3025 (tdee+250 build_muscle), macros.protein=160 (80kg*2g/kg), carbs/fats present. GET /api/onboarding/status returns onboarding_complete=true after completion. 401 properly returned without auth on both endpoints."
+
+  - task: "TRACKD Body Measurements API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoints: GET /api/measurements (history), POST /api/measurements (add weight/neck/chest/waist/hips/arms/thighs), GET /api/measurements/weight (weight history for graphing). Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "✅ All measurement tests passed. GET /api/measurements returns list with initial measurement created during onboarding (weight 80kg). POST /api/measurements with {weight_kg:79.5, chest_cm:105, waist_cm:85, neck_cm:40} successfully creates new measurement with measurement_id. GET /api/measurements/weight?days=30 returns weight history list. 401 properly returned without auth on all 3 endpoints."
+
+  - task: "TRACKD Exercise Library API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoints: GET /api/exercises/library (full library by muscle group), GET /api/exercises/library/search?q=&muscle_group= (search/filter, includes user's custom exercises). Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "✅ All exercise library tests passed. GET /api/exercises/library returns library object grouped by 7 muscle groups (chest/back/shoulders/arms/legs/core/cardio) with total_exercises count. Search by q=bench correctly returns only exercises matching 'bench'. Filter by muscle_group=chest returns only chest exercises (all results muscle_group=chest verified). Search endpoint correctly enforces auth (401 without). NOTE: /library (no search) is intentionally public per implementation."
+
+  - task: "TRACKD Personal Records API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoints: GET /api/exercises/prs (recent PRs), GET /api/exercises/prs/{exercise_name} (current PR + 1RM history via Epley formula). Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "✅ All PR tests passed. GET /api/exercises/prs returns {records: []} list (empty initially as expected). GET /api/exercises/prs/Bench%20Press returns {current_pr: null, one_rm_history: []} structure. 401 properly returned without auth on both endpoints."
+
+  - task: "TRACKD Workout Templates API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoints: GET /api/templates (returns 7 preset templates Push/Pull/Legs/Upper/Lower/FullBody/PPL + user templates), POST /api/templates (save custom), DELETE /api/templates/{template_id}. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "✅ All template tests passed. GET /api/templates returns presets array with exactly 7 items {Push Day, Pull Day, Leg Day, Upper Body, Lower Body, Full Body, PPL} plus user_templates list. POST /api/templates with {name:'My Custom', exercises:[{exercise_name:'Squat', sets:3}]} creates template with template_id. DELETE /api/templates/{id} on created template returns 200. DELETE /api/templates/nonexistent_xyz_123 returns 404. 401 properly returned without auth."
+
+  - task: "TRACKD Plate Calculator API"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoint: GET /api/exercises/plate-calculator?weight=&unit=kg|lbs returns plates_per_side with colors, supports 20kg or 45lbs barbell. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "✅ All plate calculator tests passed. weight=100 kg: total_weight=100, barbell_weight=20, per_side=40, plates_per_side weights=[25,15] (greedy: 25 + 15 = 40). weight=20 kg: just barbell, plates_per_side=[], per_side=0. weight=10 kg: returns {error: 'Weight must be at least 20kg (barbell weight)'}. weight=135 lbs: barbell_weight=45, per_side=45, plates=[45]. Plates include color data per spec. NOTE: endpoint is public (no auth) per implementation - acceptable for utility calc."
+
 metadata:
   created_by: "testing_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "AI Chef Meal Suggestions API"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -277,3 +366,5 @@ agent_communication:
     message: "AI Chef Meal Suggestions API testing completed successfully. ✅ POST /api/pantry/ai-chef/suggest endpoint working correctly with proper authentication (401 without Bearer token), GPT-4o LLM integration functional, returns valid JSON response with success=true, meals array containing 2 realistic meal suggestions using pantry items (Chicken Breast, Brown Rice, Eggs, Broccoli), proper macros calculation, remaining nutrition goals, and pantry_items_used count. Response structure matches all expected fields. Fixed LLM integration issue (UserMessage object requirement) during testing. Created test user with pantry items as specified in review request. All functionality verified and working as designed."
   - agent: "testing"
     message: "Enhanced AI Chef Recipe API comprehensive testing completed successfully. ✅ All validation checks passed (14/14). Created test user test-user-recipe-1775063605127 with 5 pantry items (Chicken Breast, Brown Rice, Eggs, Olive Oil, Broccoli) as specified in review request. ✅ Authentication working correctly (401 for unauthenticated, accepts Bearer token). ✅ Enhanced response structure fully validated: success=true, meals array with 2 detailed meal suggestions, each containing name, ingredients with quantities, step-by-step recipe instructions, cook_time in minutes, complete macros breakdown. ✅ Business logic: remaining macros object, pantry_items_used=5. ✅ LLM integration: GPT-4o generating realistic meals ('Grilled Chicken and Broccoli with Brown Rice', 'Egg Fried Rice with Chicken and Broccoli') using all pantry items. All enhanced features working as designed. API ready for production use."
+  - agent: "testing"
+    message: "TRACKD pivot backend testing completed - ALL 65 ASSERTIONS PASSED across 6 new feature areas. Created test user trackd-test@example.com with session test_session_trackd_1777237904201 via mongosh. ✅ Onboarding (POST/GET): Verified Mifflin-St Jeor BMR=1790 for John (28M, 80kg, 180cm), TDEE=2775 (1790*1.55), goal_calories=3025 (build_muscle +250), protein=160g (2g/kg). Initial measurement auto-created. ✅ Body Measurements: GET history (initial weight from onboarding), POST new (79.5kg, chest 105, waist 85, neck 40), GET weight history. ✅ Exercise Library: GET /library returns 7 muscle groups + total count, search by q=bench filters correctly, search by muscle_group=chest returns chest-only results. ✅ Personal Records: GET /prs returns records list, GET /prs/{name} returns {current_pr, one_rm_history}. ✅ Templates: 7 presets verified (Push Day, Pull Day, Leg Day, Upper Body, Lower Body, Full Body, PPL), POST creates user template, DELETE works for created template, returns 404 for nonexistent. ✅ Plate Calculator: 100kg→[25,15] per side, 20kg→[], 10kg→error, 135lbs→[45]. All auth gates (401) verified on protected endpoints. /library and /plate-calculator are intentionally public utilities. No bugs found."
