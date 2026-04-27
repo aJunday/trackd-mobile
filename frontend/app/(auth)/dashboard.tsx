@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../_layout';
 import { recommendSplit, getAllSplits, getDayName, getTodayWorkout, DaysPerWeek, Goal, SplitRecommendation } from '../../src/data/splits';
+import CoachCardsSection from '../../src/components/CoachCardsSection';
 
 const ACCENT = '#F5A623';
 const PR = '#FF6B35';
@@ -239,6 +240,9 @@ export default function Dashboard() {
             </View>
           </>
         )}
+
+        {/* AI Coach insights */}
+        <CoachCardsSection sessionToken={sessionToken} />
 
         {/* 3 weekly stat cards */}
         <Text style={styles.section}>This Week</Text>
