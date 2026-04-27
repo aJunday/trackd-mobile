@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../_layout';
+import { authFetch } from '../../src/utils/authFetch';
 
 const ACCENT = '#F5A623';
 const ACCENT_RED = '#FF6B35';
@@ -66,13 +67,12 @@ export default function KitchenScreen() {
     if (!sessionToken) return;
     setLoadError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/nutrition/dashboard`, {
-        headers: apiHeaders(),
-      });
+      const res = await authFetch(`${BACKEND_URL}/api/nutrition/dashboard`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
-      } else {
+      } else if (res.status !== 401) {
+        // 401 is handled globally by authFetch (purges + redirects); only show error for other failures
         const txt = await res.text().catch(() => '');
         setLoadError(`HTTP ${res.status}: ${txt.slice(0, 100) || 'no body'}`);
         console.warn('Kitchen dashboard load failed', res.status, txt);
@@ -85,7 +85,7 @@ export default function KitchenScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [sessionToken, apiHeaders]);
+  }, [sessionToken]);
 
   useEffect(() => {
     load();

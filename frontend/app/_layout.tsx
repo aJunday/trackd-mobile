@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import { Storage } from '../src/utils/storage';
+import { setAuthHandlers } from '../src/utils/authFetch';
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 
@@ -59,6 +60,23 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const navigationState = useRootNavigationState();
 
+  // Centralized 401 handler — used by every authFetch call across the app.
+  // On 401 anywhere: purge stored token, clear user state, redirect to login.
+  const handleUnauthorized = useCallback(() => {
+    console.log('[auth] 401 detected — purging stale session');
+    setUser(null);
+    setSessionToken(null);
+    Storage.removeItem(SESSION_KEY).catch(() => {});
+  }, []);
+
+  // Wire up authFetch handlers — every API call uses these
+  useEffect(() => {
+    setAuthHandlers({
+      getToken: () => sessionToken,
+      onUnauthorized: handleUnauthorized,
+    });
+  }, [sessionToken, handleUnauthorized]);
+
   const checkAuth = useCallback(async () => {
     try {
       const headers: Record<string, string> = {
@@ -79,10 +97,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = await response.json();
         setUser(userData);
       } else {
-        // Stale/expired token — purge from storage so it doesn't keep being restored on next mount
-        setUser(null);
-        setSessionToken(null);
-        Storage.removeItem(SESSION_KEY).catch(() => {});
+        // Stale/expired token — fire the centralized handler so all retries stop
+        handleUnauthorized();
       }
     } catch (error) {
       console.log('Auth check error:', error);
@@ -90,7 +106,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionToken]);
+  }, [sessionToken, handleUnauthorized]);
 
   // Handle deep linking for OAuth callback
   useEffect(() => {
