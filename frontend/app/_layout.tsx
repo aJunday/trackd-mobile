@@ -79,8 +79,10 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = await response.json();
         setUser(userData);
       } else {
+        // Stale/expired token — purge from storage so it doesn't keep being restored on next mount
         setUser(null);
         setSessionToken(null);
+        Storage.removeItem(SESSION_KEY).catch(() => {});
       }
     } catch (error) {
       console.log('Auth check error:', error);
