@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,384 +6,400 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  SafeAreaView,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#F5A623';
+const ACCENT = '#F5A623';
+const PR = '#FF6B35';
+const SUCCESS = '#2ECC71';
+const BG = '#0D0D0F';
+const CARD = '#161618';
+const BORDER = '#2C2C2E';
+const TEXT_MUTED = '#8E8E93';
+
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+const haptic = () => {
+  if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+};
+
+const greeting = (h: number) => {
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+};
+
+interface WeekStats {
+  workouts: number;
+  sets: number;
+  volume_kg: number;
+}
 
 interface Workout {
   workout_id: string;
   name: string;
-  started_at: string;
+  started_at?: string;
   completed_at?: string;
-  duration_minutes?: number;
-  exercises: Array<{
-    exercise_name: string;
-    sets: Array<{ weight: number; reps: number; completed: boolean }>;
-  }>;
+  exercises?: any[];
 }
 
-export default function DashboardScreen() {
-  const { user, sessionToken } = useAuth();
+export default function Dashboard() {
   const router = useRouter();
-  const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([]);
+  const { user, sessionToken } = useAuth();
+  const [stats, setStats] = useState<WeekStats>({ workouts: 0, sets: 0, volume_kg: 0 });
+  const [recent, setRecent] = useState<Workout[]>([]);
+  const [activeProgram, setActiveProgram] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchWorkouts = async () => {
+  const apiHeaders = useCallback(
+    () => ({
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionToken}`,
+    }),
+    [sessionToken]
+  );
+
+  const load = useCallback(async () => {
+    if (!sessionToken) return;
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (sessionToken) {
-        headers['Authorization'] = `Bearer ${sessionToken}`;
+      const [wRes, pRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/workouts`, { headers: apiHeaders() }),
+        fetch(`${BACKEND_URL}/api/programs/current`, { headers: apiHeaders() }),
+      ]);
+      if (wRes.ok) {
+        const all: Workout[] = await wRes.json();
+        const completed = all
+          .filter((w: any) => w.status === 'completed' || w.completed_at)
+          .sort((a: any, b: any) =>
+            new Date(b.completed_at || b.started_at || 0).getTime() -
+            new Date(a.completed_at || a.started_at || 0).getTime()
+          );
+        // Last 7 days stats
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        let setCount = 0;
+        let volume = 0;
+        let workoutCount = 0;
+        for (const w of completed) {
+          const ts = new Date(w.completed_at || w.started_at || 0).getTime();
+          if (ts < cutoff) continue;
+          workoutCount++;
+          for (const ex of (w as any).exercises || []) {
+            for (const s of ex.sets || []) {
+              if (s.completed) {
+                setCount++;
+                volume += (s.weight || 0) * (s.reps || 0);
+              }
+            }
+          }
+        }
+        setStats({ workouts: workoutCount, sets: setCount, volume_kg: Math.round(volume) });
+        setRecent(completed.slice(0, 5));
       }
-
-      const response = await fetch(`${BACKEND_URL}/api/workouts`, {
-        headers,
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setRecentWorkouts(data.slice(0, 5));
+      if (pRes.ok) {
+        const p = await pRes.json();
+        setActiveProgram(p.active ? p : null);
       }
-    } catch (error) {
-      console.error('Error fetching workouts:', error);
+    } catch (e) {
+      console.log('dashboard load err', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [sessionToken, apiHeaders]);
 
   useEffect(() => {
-    fetchWorkouts();
-  }, []);
+    load();
+  }, [load]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchWorkouts();
-    setRefreshing(false);
+  const startWorkout = () => {
+    haptic();
+    router.push('/(auth)/workout');
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const firstName = (user?.name || 'Athlete').split(' ')[0];
+  const hour = new Date().getHours();
 
-  const getTotalSets = (workout: Workout) => {
-    return workout.exercises.reduce((acc, ex) => {
-      return acc + ex.sets.filter(s => s.completed).length;
-    }, 0);
-  };
-
-  const getTotalVolume = (workout: Workout) => {
-    let volume = 0;
-    workout.exercises.forEach(ex => {
-      ex.sets.forEach(set => {
-        if (set.completed) {
-          volume += set.weight * set.reps;
-        }
-      });
-    });
-    return volume;
-  };
-
-  // Get greeting based on time
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 18) return 'Good Afternoon';
-    return 'Good Evening';
-  };
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={ACCENT} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
+            tintColor={ACCENT}
             refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={ACCENT_COLOR}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
           />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.userName}>{user?.name || 'Athlete'}</Text>
-          </View>
-          <View style={styles.avatarContainer}>
-            <Ionicons name="person-circle" size={48} color={ACCENT_COLOR} />
-          </View>
-        </View>
+        {/* Greeting */}
+        <Text style={styles.greeting}>{greeting(hour)},</Text>
+        <Text style={styles.name}>{firstName} 👋</Text>
 
-        {/* Quick Start */}
+        {/* Big Start Workout card with subtle gradient feel */}
         <TouchableOpacity
-          style={styles.quickStartCard}
-          onPress={() => router.push('/(auth)/workout')}
-          activeOpacity={0.8}
+          activeOpacity={0.9}
+          style={styles.heroCard}
+          onPress={startWorkout}
         >
-          <View style={styles.quickStartContent}>
-            <View style={styles.quickStartIcon}>
-              <Ionicons name="add" size={32} color="#000000" />
+          <View style={styles.heroTopBar} />
+          <View style={styles.heroContent}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroLabel}>READY TO TRAIN</Text>
+              <Text style={styles.heroTitle}>Start Workout</Text>
+              <Text style={styles.heroSub}>
+                {activeProgram?.active
+                  ? `${activeProgram.active.sport_name} · W${activeProgram.current_week} D${activeProgram.current_day}`
+                  : 'Empty session or pick a template'}
+              </Text>
             </View>
-            <View style={styles.quickStartText}>
-              <Text style={styles.quickStartTitle}>Start Workout</Text>
-              <Text style={styles.quickStartSubtitle}>Begin a new training session</Text>
+            <View style={styles.heroIconWrap}>
+              <Ionicons name="play" size={36} color="#000" />
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={24} color="#000000" />
         </TouchableOpacity>
 
-        {/* Stats Overview */}
-        <View style={styles.statsContainer}>
-          <Text style={styles.sectionTitle}>This Week</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{recentWorkouts.length}</Text>
-              <Text style={styles.statLabel}>Workouts</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>
-                {recentWorkouts.reduce((acc, w) => acc + getTotalSets(w), 0)}
-              </Text>
-              <Text style={styles.statLabel}>Sets</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>
-                {Math.round(
-                  recentWorkouts.reduce((acc, w) => acc + getTotalVolume(w), 0) / 1000
-                )}k
-              </Text>
-              <Text style={styles.statLabel}>Volume (kg)</Text>
-            </View>
-          </View>
+        {/* 3 weekly stat cards */}
+        <Text style={styles.section}>This Week</Text>
+        <View style={styles.statRow}>
+          <StatCard
+            label="Workouts"
+            value={stats.workouts}
+            icon="barbell"
+            color={ACCENT}
+          />
+          <StatCard
+            label="Sets"
+            value={stats.sets}
+            icon="checkmark-done"
+            color={SUCCESS}
+          />
+          <StatCard
+            label="Volume"
+            value={`${stats.volume_kg}`}
+            unit="kg"
+            icon="trending-up"
+            color={PR}
+          />
         </View>
 
-        {/* Recent Workouts */}
-        <View style={styles.recentContainer}>
-          <Text style={styles.sectionTitle}>Recent Workouts</Text>
-          {recentWorkouts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="barbell-outline" size={48} color="#333333" />
-              <Text style={styles.emptyText}>No workouts yet</Text>
-              <Text style={styles.emptySubtext}>Start your first workout above!</Text>
-            </View>
-          ) : (
-            recentWorkouts.map((workout) => (
-              <TouchableOpacity
-                key={workout.workout_id}
-                style={styles.workoutCard}
-                onPress={() => router.push(`/(auth)/workout?id=${workout.workout_id}`)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.workoutHeader}>
-                  <View>
-                    <Text style={styles.workoutName}>{workout.name}</Text>
-                    <Text style={styles.workoutDate}>
-                      {formatDate(workout.started_at)}
-                      {workout.duration_minutes && ` • ${workout.duration_minutes} min`}
-                    </Text>
-                  </View>
-                  {workout.completed_at ? (
-                    <View style={styles.completedBadge}>
-                      <Ionicons name="checkmark" size={14} color="#00FF87" />
-                    </View>
-                  ) : (
-                    <View style={styles.inProgressBadge}>
-                      <Text style={styles.inProgressText}>In Progress</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.workoutStats}>
-                  <Text style={styles.workoutStatText}>
-                    {workout.exercises.length} exercises • {getTotalSets(workout)} sets
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))
-          )}
+        {/* Quick Actions row */}
+        <Text style={styles.section}>Quick</Text>
+        <View style={styles.quickRow}>
+          <QuickTile
+            icon="scan"
+            label="Scan Meal"
+            sub="Photo · Barcode"
+            onPress={() => router.push('/(auth)/meal-scanner')}
+          />
+          <QuickTile
+            icon="trophy"
+            label="Programs"
+            sub="18 sports"
+            onPress={() => router.push('/(auth)/programs')}
+          />
+          <QuickTile
+            icon="restaurant"
+            label="Kitchen"
+            sub="Macros"
+            onPress={() => router.push('/(auth)/kitchen')}
+          />
         </View>
+
+        {/* Recent workouts */}
+        <Text style={styles.section}>Recent Workouts</Text>
+        {recent.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <MaterialCommunityIcons name="calendar-blank-outline" size={32} color={TEXT_MUTED} />
+            <Text style={styles.emptyTitle}>No sessions yet</Text>
+            <Text style={styles.emptySub}>Tap Start Workout above to log your first one.</Text>
+          </View>
+        ) : (
+          recent.map((w) => (
+            <RecentRow key={w.workout_id} w={w} />
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function StatCard({
+  label,
+  value,
+  unit,
+  icon,
+  color,
+}: {
+  label: string;
+  value: number | string;
+  unit?: string;
+  icon: any;
+  color: string;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <Ionicons name={icon} size={18} color={color} />
+      <Text style={[styles.statValue, { color }]}>
+        {value}
+        {unit ? <Text style={styles.statUnit}> {unit}</Text> : null}
+      </Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function QuickTile({
+  icon,
+  label,
+  sub,
+  onPress,
+}: {
+  icon: any;
+  label: string;
+  sub: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.quickTile} onPress={onPress}>
+      <Ionicons name={icon} size={22} color={ACCENT} />
+      <Text style={styles.quickLabel}>{label}</Text>
+      <Text style={styles.quickSub}>{sub}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function RecentRow({ w }: { w: Workout }) {
+  const exercises = (w.exercises || []).map((ex: any) => ex.exercise_name).filter(Boolean);
+  const tagText = exercises.slice(0, 3).join(' · ');
+  const completedSets = (w.exercises || []).reduce(
+    (a: number, ex: any) => a + (ex.sets || []).filter((s: any) => s.completed).length,
+    0
+  );
+  const date = new Date(w.completed_at || w.started_at || 0);
+  const dateStr = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return (
+    <View style={styles.recentCard}>
+      <View style={styles.recentTop}>
+        <Text style={styles.recentName}>{w.name || 'Workout'}</Text>
+        <Text style={styles.recentDate}>{dateStr}</Text>
+      </View>
+      {!!tagText && <Text style={styles.recentTags}>{tagText}{exercises.length > 3 ? ` +${exercises.length - 3} more` : ''}</Text>}
+      <View style={styles.recentMetaRow}>
+        <View style={styles.recentMeta}>
+          <Ionicons name="checkmark-done" size={12} color={ACCENT} />
+          <Text style={styles.recentMetaText}>{completedSets} sets</Text>
+        </View>
+        <View style={styles.recentMeta}>
+          <Ionicons name="barbell" size={12} color={TEXT_MUTED} />
+          <Text style={styles.recentMetaText}>{exercises.length} exercises</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000000',
+  container: { flex: 1, backgroundColor: BG },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { padding: 16, paddingBottom: 64 },
+  greeting: { color: TEXT_MUTED, fontSize: 16, fontWeight: '500' },
+  name: { color: '#fff', fontSize: 32, fontWeight: '900', marginTop: 2, letterSpacing: -0.5 },
+
+  heroCard: {
+    backgroundColor: ACCENT,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginTop: 18,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
   },
-  scrollView: {
-    flex: 1,
+  heroTopBar: { height: 6, backgroundColor: 'rgba(0,0,0,0.15)' },
+  heroContent: { flexDirection: 'row', alignItems: 'center', padding: 20 },
+  heroLabel: { color: 'rgba(0,0,0,0.6)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
+  heroTitle: { color: '#000', fontSize: 28, fontWeight: '900', marginTop: 4 },
+  heroSub: { color: 'rgba(0,0,0,0.7)', fontSize: 13, fontWeight: '600', marginTop: 4 },
+  heroIconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  greeting: {
-    fontSize: 16,
-    color: '#888888',
-  },
-  userName: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  avatarContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quickStartCard: {
-    backgroundColor: ACCENT_COLOR,
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  quickStartContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  quickStartIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  quickStartText: {},
-  quickStartTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  quickStartSubtitle: {
-    fontSize: 14,
-    color: 'rgba(0, 0, 0, 0.6)',
-  },
-  statsContainer: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 12,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+
+  section: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 24, marginBottom: 10, letterSpacing: 0.3 },
+  statRow: { flexDirection: 'row', gap: 8 },
   statCard: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1A1A1A',
-  },
-  statValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: ACCENT_COLOR,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666666',
-    marginTop: 4,
-  },
-  recentContainer: {
-    marginBottom: 24,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: CARD,
     borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#1A1A1A',
+    borderColor: BORDER,
+    gap: 6,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginTop: 12,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 4,
-  },
-  workoutCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
+  statValue: { fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  statUnit: { fontSize: 12, fontWeight: '700', color: TEXT_MUTED },
+  statLabel: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  quickRow: { flexDirection: 'row', gap: 8 },
+  quickTile: {
+    flex: 1,
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#1A1A1A',
-  },
-  workoutHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderColor: BORDER,
+    gap: 4,
     alignItems: 'flex-start',
   },
-  workoutName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  workoutDate: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 2,
-  },
-  completedBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 255, 135, 0.2)',
-    justifyContent: 'center',
+  quickLabel: { color: '#fff', fontSize: 13, fontWeight: '800', marginTop: 6 },
+  quickSub: { color: TEXT_MUTED, fontSize: 10, fontWeight: '600' },
+
+  emptyCard: {
+    backgroundColor: CARD,
+    borderRadius: 16,
+    padding: 28,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  inProgressBadge: {
-    backgroundColor: 'rgba(255, 170, 0, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+  emptyTitle: { color: '#fff', fontSize: 15, fontWeight: '800', marginTop: 8 },
+  emptySub: { color: TEXT_MUTED, fontSize: 12, marginTop: 4, textAlign: 'center' },
+
+  recentCard: {
+    backgroundColor: CARD,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  inProgressText: {
-    fontSize: 12,
-    color: '#FFAA00',
-    fontWeight: '500',
-  },
-  workoutStats: {
-    marginTop: 8,
-  },
-  workoutStatText: {
-    fontSize: 14,
-    color: '#888888',
-  },
+  recentTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  recentName: { color: '#fff', fontSize: 15, fontWeight: '800', flex: 1 },
+  recentDate: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700' },
+  recentTags: { color: ACCENT, fontSize: 12, fontWeight: '600', marginTop: 4 },
+  recentMetaRow: { flexDirection: 'row', gap: 14, marginTop: 8 },
+  recentMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  recentMetaText: { color: TEXT_MUTED, fontSize: 11, fontWeight: '600' },
 });

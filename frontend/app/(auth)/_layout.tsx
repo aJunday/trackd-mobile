@@ -1,46 +1,67 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { useAuth } from '../_layout';
 
 const ACCENT = '#F5A623';
-const BG = '#0D0D0F';
-const TAB_BAR_BG = '#0A0A0A';
+const TAB_BG = '#0A0A0A';
+const INACTIVE = '#666';
+
+function TabIcon({
+  name,
+  set,
+  color,
+  size,
+  focused,
+}: {
+  name: any;
+  set: 'ion' | 'mc';
+  color: string;
+  size: number;
+  focused: boolean;
+}) {
+  const Icon = set === 'mc' ? MaterialCommunityIcons : Ionicons;
+  return (
+    <View style={styles.iconWrap}>
+      <Icon name={name} size={size} color={color} />
+      <View
+        style={[
+          styles.dot,
+          { opacity: focused ? 1 : 0, backgroundColor: ACCENT },
+        ]}
+      />
+    </View>
+  );
+}
 
 export default function AuthLayout() {
   const { user } = useAuth();
-
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: TAB_BAR_BG,
+          backgroundColor: TAB_BG,
           borderTopColor: '#1A1A1A',
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-          paddingTop: 6,
+          height: Platform.OS === 'ios' ? 92 : 72,
+          paddingBottom: Platform.OS === 'ios' ? 32 : 12,
+          paddingTop: 10,
         },
         tabBarActiveTintColor: ACCENT,
-        tabBarInactiveTintColor: '#666666',
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
+        tabBarInactiveTintColor: INACTIVE,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon set="ion" name={focused ? 'home' : 'home-outline'} color={color} size={size} focused={focused} />
           ),
         }}
       />
@@ -48,8 +69,8 @@ export default function AuthLayout() {
         name="workout"
         options={{
           title: 'Workout',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="dumbbell" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon set="mc" name="dumbbell" color={color} size={size} focused={focused} />
           ),
         }}
       />
@@ -57,8 +78,8 @@ export default function AuthLayout() {
         name="programs"
         options={{
           title: 'Programs',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon set="ion" name={focused ? 'trophy' : 'trophy-outline'} color={color} size={size} focused={focused} />
           ),
         }}
       />
@@ -66,8 +87,17 @@ export default function AuthLayout() {
         name="kitchen"
         options={{
           title: 'Kitchen',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="restaurant" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon set="mc" name={focused ? 'silverware-fork-knife' : 'silverware-fork-knife'} color={color} size={size} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'History',
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon set="ion" name={focused ? 'time' : 'time-outline'} color={color} size={size} focused={focused} />
           ),
         }}
       />
@@ -75,8 +105,8 @@ export default function AuthLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon set="ion" name={focused ? 'person' : 'person-outline'} color={color} size={size} focused={focused} />
           ),
         }}
       />
@@ -88,7 +118,11 @@ export default function AuthLayout() {
       <Tabs.Screen name="add-pantry-item" options={{ href: null }} />
       <Tabs.Screen name="ai-chef" options={{ href: null }} />
       <Tabs.Screen name="meal-scanner" options={{ href: null }} />
-      <Tabs.Screen name="history" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: { alignItems: 'center', justifyContent: 'center', height: 32 },
+  dot: { width: 4, height: 4, borderRadius: 2, marginTop: 4 },
+});

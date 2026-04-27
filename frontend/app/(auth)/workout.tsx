@@ -19,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../_layout';
 
 const ACCENT = '#F5A623';
@@ -721,10 +722,12 @@ export default function WorkoutScreen() {
             <Ionicons name="close" size={22} color="#fff" />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={styles.timerText}>{fmtDur(elapsed)}</Text>
-            <Text style={styles.timerSub}>
-              {completedSets}/{totalSets} sets · {Math.round(totalVolume)} kg
-            </Text>
+            <PulsingTimer
+              elapsedMs={elapsed}
+              completedSets={completedSets}
+              totalSets={totalSets}
+              totalVolume={totalVolume}
+            />
           </View>
           <TouchableOpacity onPress={finishWorkout} style={styles.finishBtn}>
             <Text style={styles.finishBtnText}>Finish</Text>
@@ -783,6 +786,27 @@ export default function WorkoutScreen() {
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+// ============== PULSING TIMER ==============
+function PulsingTimer({ elapsedMs, completedSets, totalSets, totalVolume }: { elapsedMs: number; completedSets: number; totalSets: number; totalVolume: number }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.06, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={{ alignItems: 'center', transform: [{ scale: pulse }] }}>
+      <Text style={styles.timerText}>{fmtDur(elapsedMs)}</Text>
+      <Text style={styles.timerSub}>
+        {completedSets}/{totalSets} sets · {Math.round(totalVolume)} kg
+      </Text>
+    </Animated.View>
   );
 }
 
@@ -1205,7 +1229,7 @@ function PlateCalcModal({
   );
 }
 
-// ============== REST TIMER BAR ==============
+// ============== REST TIMER (circular gold ring) ==============
 function RestTimerBar({
   secs,
   total,
@@ -1217,17 +1241,36 @@ function RestTimerBar({
   onSkip: () => void;
   onAdjust: (delta: number) => void;
 }) {
-  const pct = total > 0 ? (secs / total) * 100 : 0;
+  const pct = total > 0 ? secs / total : 0;
+  const radius = 36;
+  const circ = 2 * Math.PI * radius;
+  const offset = circ * (1 - pct);
   return (
     <View style={styles.restBar}>
-      <View style={[styles.restProgress, { width: `${pct}%` }]} />
       <View style={styles.restRow}>
         <TouchableOpacity onPress={() => onAdjust(-15)} style={styles.restBtn}>
           <Text style={styles.restBtnText}>−15</Text>
         </TouchableOpacity>
-        <View style={{ alignItems: 'center', flex: 1 }}>
-          <Text style={styles.restLabel}>REST</Text>
-          <Text style={styles.restTime}>{fmtDur(secs * 1000)}</Text>
+        <View style={styles.ringWrap}>
+          <Svg width={90} height={90} viewBox="0 0 100 100">
+            <Circle cx="50" cy="50" r={radius} stroke="#222" strokeWidth="6" fill="none" />
+            <Circle
+              cx="50"
+              cy="50"
+              r={radius}
+              stroke={GOLD}
+              strokeWidth="6"
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={`${circ}`}
+              strokeDashoffset={offset}
+              transform="rotate(-90 50 50)"
+            />
+          </Svg>
+          <View style={styles.ringInner} pointerEvents="none">
+            <Text style={styles.ringTime}>{fmtDur(secs * 1000)}</Text>
+            <Text style={styles.ringLabel}>REST</Text>
+          </View>
         </View>
         <TouchableOpacity onPress={() => onAdjust(15)} style={styles.restBtn}>
           <Text style={styles.restBtnText}>+15</Text>
@@ -1541,13 +1584,6 @@ const styles = StyleSheet.create({
     borderTopColor: BORDER,
     paddingBottom: Platform.OS === 'ios' ? 28 : 12,
   },
-  restProgress: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,212,255,0.18)',
-  },
   restRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
   restBtn: {
     backgroundColor: '#2A2A2A',
@@ -1556,9 +1592,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   restBtnText: { color: '#fff', fontWeight: '700' },
-  restLabel: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  restTime: { color: ACCENT, fontSize: 22, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  skipBtn: { backgroundColor: ACCENT, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+  ringWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  ringInner: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringTime: { color: GOLD, fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  ringLabel: { color: TEXT_MUTED, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+  skipBtn: { backgroundColor: GOLD, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   // PR toast
   prToast: {
     position: 'absolute',
