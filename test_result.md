@@ -348,10 +348,24 @@ metadata:
 
 test_plan:
   current_focus:
-    - "TRACKD User Training Split — PUT /api/users/split + onboarding fields"
-  stuck_tasks: []
+    - "Frontend Auth CORS Block (localhost:3000)"
+  stuck_tasks:
+    - "Frontend Auth CORS Block (localhost:3000)"
   test_all: false
   test_priority: "high_first"
+
+frontend_blocker:
+  - task: "Frontend Auth CORS Block (localhost:3000)"
+    implemented: true
+    working: false
+    file: "frontend/app/_layout.tsx (lines 75, 132, 253)"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL BLOCKER — All 7 frontend tests (T1 Dashboard StartWorkout, T2 Programs StartWorkout, T3 Templates Section, T4 Template Modal, T5 Profile→TrainingSchedule, T6 Dashboard WeeklyCard, T7 Onboarding Step 3) FAILED at the very first navigation step because the app is stuck on the unauthenticated 3-slide splash carousel. Console shows: 'Access to fetch at https://fitness-command-7.preview.emergentagent.com/api/auth/me from origin http://localhost:3000 has been blocked by CORS policy: Response to preflight request doesn't pass access control check: The value of the Access-Control-Allow-Origin header in the response must not be the wildcard * when the request credentials mode is include.' Frontend uses credentials:'include' on fetch calls in _layout.tsx (lines 75, 132, 253) while backend CORS returns Allow-Origin: *. Browsers reject this combination → /api/auth/me always fails → user state remains null → AuthProvider keeps user on the splash slides. Verified curl with Bearer token returns 200 (so token IS valid; this is purely a browser CORS preflight issue). FIX: Either (a) remove credentials:'include' from the 3 fetch calls in _layout.tsx (the app uses Bearer Authorization header, NOT cookies, so credentials:'include' is unnecessary), OR (b) set backend CORS to echo a specific origin (e.g. http://localhost:3000) instead of '*'. Recommend option (a) — single-line frontend fix. After fix, all 7 tests should be retestable. Tests T1-T7 cannot be marked PASS/FAIL on functionality until auth bypass works in browser."
 
   - task: "TRACKD Scanner: USDA Barcode Lookup"
     implemented: true
