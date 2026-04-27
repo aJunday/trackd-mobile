@@ -72,7 +72,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
         method: 'GET',
         headers,
-        credentials: 'include',
+        credentials: 'omit',
       });
 
       if (response.ok) {
@@ -129,7 +129,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
+        credentials: 'omit',
         body: JSON.stringify({ session_id: sessionId }),
       });
 
@@ -250,7 +250,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       await fetch(`${BACKEND_URL}/api/auth/logout`, {
         method: 'POST',
         headers,
-        credentials: 'include',
+        credentials: 'omit',
       });
     } catch (error) {
       console.error('Logout error:', error);
