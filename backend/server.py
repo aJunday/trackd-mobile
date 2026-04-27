@@ -61,7 +61,8 @@ class User(BaseModel):
     activity_level: Optional[str] = None  # sedentary, lightly_active, moderately_active, very_active, extra_active
     goal_type: Optional[str] = None  # lose_fat, maintain, build_muscle
     sport: Optional[str] = None
-    # Calculated values
+    training_days_per_week: Optional[int] = None  # 2-6
+    split_id: Optional[str] = None  # e.g. 'upper_lower_4', 'ppl_3'
     bmr: Optional[float] = None
     tdee: Optional[float] = None
     goal_calories: int = 2200
@@ -1874,8 +1875,6 @@ async def complete_onboarding(
         "activity_level": data.activity_level,
         "goal_type": data.goal_type,
         "sport": data.sport,
-        "training_days_per_week": data.training_days_per_week,
-        "split_id": data.split_id,
         "bmr": round(bmr),
         "tdee": round(tdee),
         "goal_calories": goal_calories,
@@ -1884,6 +1883,11 @@ async def complete_onboarding(
         "goal_fats": fats,
         "onboarding_complete": True
     }
+    # Only set training schedule fields if explicitly provided (preserves existing values otherwise)
+    if data.training_days_per_week is not None:
+        update_data["training_days_per_week"] = data.training_days_per_week
+    if data.split_id is not None:
+        update_data["split_id"] = data.split_id
     
     await db.users.update_one(
         {"user_id": user.user_id},
