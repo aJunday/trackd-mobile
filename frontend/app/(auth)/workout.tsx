@@ -208,10 +208,9 @@ export default function WorkoutScreen() {
   // Handle pre-fill from Programs (Storage payload — avoids URL length issues)
   useEffect(() => {
     if (!sessionToken || loading) return;
-    if (active) return;
     if (params.fromProgram !== '1') return;
     let cancelled = false;
-    (async () => {
+    const doPrefill = async () => {
       try {
         const raw = await Storage.getItem('pending_workout');
         if (!raw) return;
@@ -271,17 +270,46 @@ export default function WorkoutScreen() {
         console.log('prefill from storage err', e);
         Alert.alert('Could not load program workout', 'Please try again from the Programs tab.');
       }
-    })();
+    };
+    if (active) {
+      // Prompt user — keep current OR replace with new program workout
+      Alert.alert(
+        'Workout in progress',
+        'You have an active workout. Discard it and start the program workout?',
+        [
+          {
+            text: 'Keep current',
+            style: 'cancel',
+            onPress: () => {
+              router.setParams({ fromProgram: '' } as any);
+              Storage.removeItem('pending_workout');
+            },
+          },
+          {
+            text: 'Discard & start new',
+            style: 'destructive',
+            onPress: () => {
+              setActive(null);
+              setRestTimer({ active: false, secs: 0, total: 0 });
+              setProgramContext(null);
+              setTimeout(() => doPrefill(), 100);
+            },
+          },
+        ]
+      );
+      return;
+    }
+    doPrefill();
     return () => { cancelled = true; };
   }, [params.fromProgram, sessionToken, loading]);
 
   // Handle autoStart from Dashboard "Start Workout" button
   useEffect(() => {
     if (!sessionToken || loading) return;
-    if (active) return;
     if (params.autoStart !== '1') return;
     const splitTpl = params.splitTemplate;
     router.setParams({ autoStart: '', splitTemplate: '' } as any);
+    if (active) return;  // already have an active workout — silently keep it
     if (splitTpl && templates.presets.length > 0) {
       const t = templates.presets.find((p) => p.template_id === splitTpl);
       if (t) {
@@ -364,6 +392,30 @@ export default function WorkoutScreen() {
 
   const startFromTemplate = async (tmpl: Template) => {
     haptic('medium');
+    if (active) {
+      Alert.alert(
+        'Workout in progress',
+        'You have an active workout. Discard it and start this template?',
+        [
+          { text: 'Keep current', style: 'cancel' },
+          {
+            text: 'Discard & start new',
+            style: 'destructive',
+            onPress: async () => {
+              setActive(null);
+              setRestTimer({ active: false, secs: 0, total: 0 });
+              setProgramContext(null);
+              setTimeout(() => doStartFromTemplate(tmpl), 100);
+            },
+          },
+        ]
+      );
+      return;
+    }
+    await doStartFromTemplate(tmpl);
+  };
+
+  const doStartFromTemplate = async (tmpl: Template) => {
     const exercises: ExerciseEntry[] = await Promise.all(
       tmpl.exercises.map(async (te, i) => {
         // Fetch previous best for each exercise
@@ -419,23 +471,6 @@ export default function WorkoutScreen() {
       setActive({ name: tmpl.name, start_time: Date.now(), exercises });
     }
   };
-
-// Helper: summarize muscles targeted by a template by inspecting exercise names
-const summarizeMuscles = (t: Template): string => {
-  const lower = t.exercises.map((e) => e.exercise_name.toLowerCase()).join(' ');
-  const groups: string[] = [];
-  if (/bench|press|fly|chest|push.?up/.test(lower)) groups.push('chest');
-  if (/row|pull|lat|deadlift/.test(lower)) groups.push('back');
-  if (/shoulder|raise|press/.test(lower)) groups.push('shoulders');
-  if (/curl/.test(lower)) groups.push('biceps');
-  if (/tricep|extension|pushdown/.test(lower)) groups.push('triceps');
-  if (/squat|leg press|lunge|split squat|extension/.test(lower)) groups.push('quads');
-  if (/deadlift|leg curl|romanian|nordic/.test(lower)) groups.push('hamstrings');
-  if (/glute|hip thrust/.test(lower)) groups.push('glutes');
-  if (/calf/.test(lower)) groups.push('calves');
-  if (/face pull/.test(lower)) groups.push('rear delts');
-  return Array.from(new Set(groups)).slice(0, 4).join(' · ') || 'full body';
-};
 
   const finishWorkout = () => {
     if (!active) return;
@@ -1212,6 +1247,23 @@ function ExercisePickerModal({
 }
 
 // ============== TEMPLATE PREVIEW MODAL ==============
+// Helper: summarize muscles targeted by a template by inspecting exercise names
+const summarizeMuscles = (t: Template): string => {
+  const lower = t.exercises.map((e) => e.exercise_name.toLowerCase()).join(' ');
+  const groups: string[] = [];
+  if (/bench|press|fly|chest|push.?up/.test(lower)) groups.push('chest');
+  if (/row|pull|lat|deadlift/.test(lower)) groups.push('back');
+  if (/shoulder|raise|press/.test(lower)) groups.push('shoulders');
+  if (/curl/.test(lower)) groups.push('biceps');
+  if (/tricep|extension|pushdown/.test(lower)) groups.push('triceps');
+  if (/squat|leg press|lunge|split squat|extension/.test(lower)) groups.push('quads');
+  if (/deadlift|leg curl|romanian|nordic/.test(lower)) groups.push('hamstrings');
+  if (/glute|hip thrust/.test(lower)) groups.push('glutes');
+  if (/calf/.test(lower)) groups.push('calves');
+  if (/face pull/.test(lower)) groups.push('rear delts');
+  return Array.from(new Set(groups)).slice(0, 4).join(' · ') || 'full body';
+};
+
 function TemplatePreviewModal({
   template,
   onClose,
