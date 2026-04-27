@@ -21,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../_layout';
+import MuscleMap, { MuscleEntry } from '../../src/components/MuscleMap';
 
 const ACCENT = '#F5A623';
 const GOLD = '#F5A623';
@@ -747,6 +748,12 @@ export default function WorkoutScreen() {
               onToggleComplete={(sid) => toggleSetComplete(ex.id, sid)}
               onRemove={() => removeExercise(ex.id)}
               onPlateCalc={(w) => setShowPlateCalc({ open: true, weight: w })}
+              onShowDetail={() =>
+                router.push({
+                  pathname: '/(auth)/exercise-detail',
+                  params: { name: ex.exercise_name },
+                })
+              }
             />
           ))}
 
@@ -819,6 +826,7 @@ function ExerciseCard({
   onToggleComplete,
   onRemove,
   onPlateCalc,
+  onShowDetail,
 }: {
   exercise: ExerciseEntry;
   onAddSet: () => void;
@@ -827,16 +835,49 @@ function ExerciseCard({
   onToggleComplete: (sid: string) => void;
   onRemove: () => void;
   onPlateCalc: (weight: number) => void;
+  onShowDetail: () => void;
 }) {
+  const [musclePri, setMusclePri] = useState<MuscleEntry[]>([]);
+  const [muscleSec, setMuscleSec] = useState<MuscleEntry[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(
+          `${BACKEND_URL}/api/exercises/muscles-thumbnail?name=${encodeURIComponent(exercise.exercise_name)}`
+        );
+        const j = await r.json();
+        if (cancelled) return;
+        setMusclePri(j.primary_muscles || []);
+        setMuscleSec(j.secondary_muscles || []);
+      } catch (e) {
+        // ignore — thumbnail just won't render
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [exercise.exercise_name]);
+
   return (
     <View style={styles.exCard}>
       <View style={styles.exHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.exName}>{exercise.exercise_name}</Text>
+        {/* Tiny muscle thumbnail */}
+        <TouchableOpacity onPress={onShowDetail} style={styles.muscleThumb} activeOpacity={0.7}>
+          {(musclePri.length > 0 || muscleSec.length > 0) ? (
+            <MuscleMap primary={musclePri} secondary={muscleSec} size="thumb" />
+          ) : (
+            <Ionicons name="body-outline" size={28} color={TEXT_MUTED} />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onShowDetail} style={{ flex: 1 }} activeOpacity={0.7}>
+          <View style={styles.exNameRow}>
+            <Text style={styles.exName}>{exercise.exercise_name}</Text>
+            <Ionicons name="information-circle-outline" size={16} color={ACCENT} style={{ marginLeft: 6 }} />
+          </View>
           {exercise.muscle_group && (
             <Text style={styles.exMuscle}>{exercise.muscle_group}</Text>
           )}
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity onPress={onRemove} style={styles.iconBtnSmall}>
           <Ionicons name="trash-outline" size={18} color={TEXT_MUTED} />
         </TouchableOpacity>
@@ -1392,7 +1433,20 @@ const styles = StyleSheet.create({
   },
   exHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   exName: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  exNameRow: { flexDirection: 'row', alignItems: 'center' },
   exMuscle: { color: ACCENT, fontSize: 11, marginTop: 2, textTransform: 'capitalize' },
+  muscleThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: '#0F0F11',
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    overflow: 'hidden',
+  },
   setHeader: {
     flexDirection: 'row',
     alignItems: 'center',

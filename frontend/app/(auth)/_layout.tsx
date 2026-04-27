@@ -118,6 +118,7 @@ export default function AuthLayout() {
       <Tabs.Screen name="add-pantry-item" options={{ href: null }} />
       <Tabs.Screen name="ai-chef" options={{ href: null }} />
       <Tabs.Screen name="meal-scanner" options={{ href: null }} />
+      <Tabs.Screen name="exercise-detail" options={{ href: null }} />
     </Tabs>
   );
 }

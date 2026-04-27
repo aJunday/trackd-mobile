@@ -1626,6 +1626,176 @@ async def search_exercises(
     
     return {"exercises": results[:50]}
 
+# ============= FREE-EXERCISE-DB LOOKUP =============
+# Loaded once at startup for fast in-memory lookups.
+import json as _json
+_FED_PATH = Path(__file__).parent / "data" / "exercises.json"
+try:
+    with open(_FED_PATH, "r") as _f:
+        FREE_EXERCISE_DB: List[dict] = _json.load(_f)
+except Exception as _e:
+    FREE_EXERCISE_DB = []
+    logger.warning(f"Could not load free-exercise-db: {_e}")
+
+FED_BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises"
+
+# Build a fast index by lowercased name and normalized name
+def _norm(s: str) -> str:
+    return "".join(c.lower() for c in s if c.isalnum())
+
+_FED_INDEX = {}
+for _ex in FREE_EXERCISE_DB:
+    _name = _ex.get("name", "")
+    _FED_INDEX[_norm(_name)] = _ex
+    # also index by id (replace _ with space)
+    _FED_INDEX[_norm(_ex.get("id", ""))] = _ex
+
+def _find_fed(name: str) -> Optional[dict]:
+    """Find a matching exercise in free-exercise-db using fuzzy logic."""
+    if not name or not FREE_EXERCISE_DB:
+        return None
+    n = _norm(name)
+    if n in _FED_INDEX:
+        return _FED_INDEX[n]
+    # Try partial matches: longest substring match
+    candidates = []
+    for key, val in _FED_INDEX.items():
+        if n in key or key in n:
+            # score by overlap length
+            overlap = min(len(n), len(key))
+            candidates.append((overlap, val))
+    if candidates:
+        candidates.sort(key=lambda x: -x[0])
+        return candidates[0][1]
+    # Token-based: at least 2 tokens must match
+    name_tokens = set(name.lower().replace("-", " ").split())
+    name_tokens.discard("")
+    best = None
+    best_score = 0
+    for ex in FREE_EXERCISE_DB:
+        ex_tokens = set(ex.get("name", "").lower().replace("-", " ").split())
+        score = len(name_tokens & ex_tokens)
+        if score > best_score and score >= 2:
+            best_score = score
+            best = ex
+    return best
+
+
+# Map free-exercise-db muscle names → react-native-body-highlighter slugs
+FED_TO_BODY_MUSCLE = {
+    "abdominals": "abs",
+    "abductors": "gluteal",
+    "adductors": "adductors",
+    "biceps": "biceps",
+    "calves": "calves",
+    "chest": "chest",
+    "forearms": "forearm",
+    "glutes": "gluteal",
+    "hamstrings": "hamstring",
+    "lats": "upper-back",
+    "lower back": "lower-back",
+    "middle back": "upper-back",
+    "neck": "neck",
+    "quadriceps": "quadriceps",
+    "shoulders": "deltoids",
+    "traps": "trapezius",
+    "triceps": "triceps",
+}
+
+
+def _to_body_muscles(fed_muscles: List[str], intensity: int) -> List[dict]:
+    """Convert free-exercise-db muscle list to body-highlighter format."""
+    out = []
+    seen = set()
+    for m in fed_muscles or []:
+        slug = FED_TO_BODY_MUSCLE.get(m.lower())
+        if slug and slug not in seen:
+            out.append({"slug": slug, "intensity": intensity})
+            seen.add(slug)
+    return out
+
+
+@exercise_router.get("/details")
+async def exercise_details(name: str):
+    """Look up an exercise's GIF frames, muscles worked, and instructions.
+
+    Source priority:
+      1. free-exercise-db (gives 2-frame image set + primary/secondary muscles)
+      2. Fallback: YouTube search URL for "<name> proper form"
+
+    Returns:
+      {
+        "name": str,
+        "matched_name": str | None,
+        "source": "free-exercise-db" | "youtube",
+        "frames": [url, url],            # 2 image URLs to alternate (free-exercise-db only)
+        "primary_muscles": [{slug, intensity}, ...],   # body-highlighter format, intensity=2
+        "secondary_muscles": [{slug, intensity}, ...], # body-highlighter format, intensity=1
+        "instructions": [str, ...] | None,
+        "youtube_search_url": str,        # always present — fallback link
+        "youtube_embed_url": str,         # for inline WebView player
+        "equipment": str | None,
+        "level": str | None,
+      }
+    """
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    fed = _find_fed(name)
+    yt_query = f"{name} proper form".replace(" ", "+")
+    youtube_search_url = f"https://www.youtube.com/results?search_query={yt_query}"
+    youtube_embed_url = f"https://www.youtube.com/embed?listType=search&list={yt_query}"
+
+    if fed:
+        frames = [f"{FED_BASE_URL}/{img}" for img in (fed.get("images") or [])]
+        primary = _to_body_muscles(fed.get("primaryMuscles", []), intensity=2)
+        secondary = _to_body_muscles(fed.get("secondaryMuscles", []), intensity=1)
+        return {
+            "name": name,
+            "matched_name": fed.get("name"),
+            "source": "free-exercise-db",
+            "frames": frames,
+            "primary_muscles": primary,
+            "secondary_muscles": secondary,
+            "instructions": fed.get("instructions"),
+            "youtube_search_url": youtube_search_url,
+            "youtube_embed_url": youtube_embed_url,
+            "equipment": fed.get("equipment"),
+            "level": fed.get("level"),
+            "category": fed.get("category"),
+        }
+
+    # Fallback — no frames, just YouTube
+    return {
+        "name": name,
+        "matched_name": None,
+        "source": "youtube",
+        "frames": [],
+        "primary_muscles": [],
+        "secondary_muscles": [],
+        "instructions": None,
+        "youtube_search_url": youtube_search_url,
+        "youtube_embed_url": youtube_embed_url,
+        "equipment": None,
+        "level": None,
+        "category": None,
+    }
+
+
+@exercise_router.get("/muscles-thumbnail")
+async def exercise_muscles_thumbnail(name: str):
+    """Return just the muscle data (primary/secondary) for thumbnail use.
+    Lighter response for list views.
+    """
+    fed = _find_fed(name) if name else None
+    if not fed:
+        return {"primary_muscles": [], "secondary_muscles": []}
+    return {
+        "primary_muscles": _to_body_muscles(fed.get("primaryMuscles", []), intensity=2),
+        "secondary_muscles": _to_body_muscles(fed.get("secondaryMuscles", []), intensity=1),
+    }
+
+
 # ==================== ONBOARDING ROUTES ====================
 
 ACTIVITY_MULTIPLIERS = {
@@ -1867,84 +2037,132 @@ PRESET_TEMPLATES = [
         "template_id": "preset_push",
         "name": "Push Day",
         "is_preset": True,
+        "description": "Hypertrophy-focused push: chest, shoulders, triceps. ~16-18 sets/wk for primary muscles.",
         "exercises": [
-            {"exercise_name": "Bench Press", "sets": 4},
-            {"exercise_name": "Overhead Press", "sets": 3},
-            {"exercise_name": "Incline Dumbbell Press", "sets": 3},
-            {"exercise_name": "Lateral Raise", "sets": 3},
-            {"exercise_name": "Tricep Pushdown", "sets": 3}
+            {"exercise_name": "Incline Dumbbell Press", "sets": 4, "reps": "8-12", "rest_seconds": 120, "cue": "Primary chest mass builder — focus on full ROM"},
+            {"exercise_name": "Cable Fly", "sets": 3, "reps": "12-15", "rest_seconds": 90, "cue": "Lengthened partial for chest stretch"},
+            {"exercise_name": "Dumbbell Bench Press", "sets": 3, "reps": "10-12", "rest_seconds": 90, "cue": "Chest volume — control the eccentric"},
+            {"exercise_name": "Dumbbell Shoulder Press", "sets": 4, "reps": "10-12", "rest_seconds": 90, "cue": "Primary shoulder press — seated for stability"},
+            {"exercise_name": "Cable Lateral Raise", "sets": 4, "reps": "15-20", "rest_seconds": 60, "cue": "Medial delt isolation — pause at top"},
+            {"exercise_name": "Rear Delt Fly", "sets": 3, "reps": "15-20", "rest_seconds": 60, "cue": "Cable rear delt — health and posture"},
+            {"exercise_name": "Overhead Tricep Extension", "sets": 3, "reps": "12-15", "rest_seconds": 75, "cue": "Long head stretch — feel the deep stretch"},
+            {"exercise_name": "Tricep Pushdown", "sets": 3, "reps": "12-15", "rest_seconds": 75, "cue": "Tricep volume — squeeze at lockout"},
+            {"exercise_name": "Lateral Raise", "sets": 2, "reps": "15", "rest_seconds": 45, "cue": "Mechanical drop set finisher — 2 angles"}
         ]
     },
     {
         "template_id": "preset_pull",
         "name": "Pull Day",
         "is_preset": True,
+        "description": "Back, biceps, rear delts. Heavy lat work + bicep variation for full development.",
         "exercises": [
-            {"exercise_name": "Deadlift", "sets": 3},
-            {"exercise_name": "Barbell Row", "sets": 4},
-            {"exercise_name": "Lat Pulldown", "sets": 3},
-            {"exercise_name": "Face Pull", "sets": 3},
-            {"exercise_name": "Barbell Curl", "sets": 3}
+            {"exercise_name": "Pull Up", "sets": 4, "reps": "6-10", "rest_seconds": 120, "cue": "Primary lat builder — weighted if you can"},
+            {"exercise_name": "Cable Row", "sets": 4, "reps": "10-12", "rest_seconds": 90, "cue": "Mid back thickness — drive elbows back"},
+            {"exercise_name": "Dumbbell Row", "sets": 3, "reps": "10-12 each", "rest_seconds": 90, "cue": "Single arm — full lat stretch at bottom"},
+            {"exercise_name": "Face Pull", "sets": 4, "reps": "15-20", "rest_seconds": 60, "cue": "Rear delt and rotator cuff health"},
+            {"exercise_name": "Incline Curl", "sets": 3, "reps": "10-15", "rest_seconds": 75, "cue": "Bicep long head lengthened partial"},
+            {"exercise_name": "Cable Curl", "sets": 3, "reps": "12-15", "rest_seconds": 60, "cue": "Bicep peak — constant tension"},
+            {"exercise_name": "Hammer Curl", "sets": 3, "reps": "12-15", "rest_seconds": 60, "cue": "Brachialis and forearm"},
+            {"exercise_name": "Straight Arm Pulldown", "sets": 3, "reps": "12-15", "rest_seconds": 60, "cue": "Lat isolation finisher"}
         ]
     },
     {
         "template_id": "preset_legs",
         "name": "Leg Day",
         "is_preset": True,
+        "description": "Complete legs: quads, hams, glutes, calves with injury prevention work.",
         "exercises": [
-            {"exercise_name": "Squat", "sets": 4},
-            {"exercise_name": "Romanian Deadlift", "sets": 3},
-            {"exercise_name": "Leg Press", "sets": 3},
-            {"exercise_name": "Leg Curl", "sets": 3},
-            {"exercise_name": "Calf Raise", "sets": 4}
+            {"exercise_name": "Squat", "sets": 4, "reps": "6-10", "rest_seconds": 180, "cue": "Primary quad builder — hit depth"},
+            {"exercise_name": "Romanian Deadlift", "sets": 4, "reps": "8-12", "rest_seconds": 120, "cue": "Primary hamstring builder — hinge at hips"},
+            {"exercise_name": "Bulgarian Split Squat", "sets": 3, "reps": "10-12 each", "rest_seconds": 90, "cue": "Unilateral quad and glute"},
+            {"exercise_name": "Leg Curl", "sets": 4, "reps": "10-15", "rest_seconds": 75, "cue": "Hamstring isolation — seated or lying"},
+            {"exercise_name": "Leg Extension", "sets": 3, "reps": "12-15", "rest_seconds": 60, "cue": "Quad isolation — pause at top"},
+            {"exercise_name": "Hip Thrust", "sets": 3, "reps": "10-15", "rest_seconds": 90, "cue": "Glute isolation — squeeze at top"},
+            {"exercise_name": "Nordic Curl", "sets": 3, "reps": "5-8", "rest_seconds": 90, "cue": "Hamstring eccentric — injury prevention"},
+            {"exercise_name": "Calf Raise", "sets": 4, "reps": "12-15", "rest_seconds": 60, "cue": "Standing — gastrocnemius focus"},
+            {"exercise_name": "Seated Calf Raise", "sets": 3, "reps": "15-20", "rest_seconds": 60, "cue": "Soleus focus — bent knee"}
         ]
     },
     {
         "template_id": "preset_upper",
         "name": "Upper Body",
         "is_preset": True,
+        "description": "Full upper body session — chest, back, shoulders, arms balanced.",
         "exercises": [
-            {"exercise_name": "Bench Press", "sets": 4},
-            {"exercise_name": "Barbell Row", "sets": 4},
-            {"exercise_name": "Overhead Press", "sets": 3},
-            {"exercise_name": "Lat Pulldown", "sets": 3},
-            {"exercise_name": "Dumbbell Curl", "sets": 3}
+            {"exercise_name": "Bench Press", "sets": 4, "reps": "6-10", "rest_seconds": 120, "cue": "Heavy primary push"},
+            {"exercise_name": "Pull Up", "sets": 4, "reps": "6-10", "rest_seconds": 120, "cue": "Heavy primary pull — weighted if you can"},
+            {"exercise_name": "Overhead Press", "sets": 3, "reps": "8-12", "rest_seconds": 90, "cue": "Vertical pressing strength"},
+            {"exercise_name": "Pendlay Row", "sets": 3, "reps": "8-10", "rest_seconds": 90, "cue": "Reset on floor each rep — explosive"},
+            {"exercise_name": "Incline Dumbbell Press", "sets": 3, "reps": "10-12", "rest_seconds": 90, "cue": "Upper chest emphasis"},
+            {"exercise_name": "Cable Row", "sets": 3, "reps": "10-12", "rest_seconds": 90, "cue": "Mid back — squeeze scaps"},
+            {"exercise_name": "Lateral Raise", "sets": 4, "reps": "15-20", "rest_seconds": 60, "cue": "Medial delts"},
+            {"exercise_name": "Face Pull", "sets": 3, "reps": "15-20", "rest_seconds": 60, "cue": "Rear delt health"},
+            {"exercise_name": "Incline Curl", "sets": 3, "reps": "10-15", "rest_seconds": 75, "cue": "Bicep long head"},
+            {"exercise_name": "Overhead Tricep Extension", "sets": 3, "reps": "12-15", "rest_seconds": 75, "cue": "Tricep long head stretch"}
         ]
     },
     {
         "template_id": "preset_lower",
         "name": "Lower Body",
         "is_preset": True,
+        "description": "Heavy lower body — squat or deadlift focus with accessories.",
         "exercises": [
-            {"exercise_name": "Squat", "sets": 4},
-            {"exercise_name": "Romanian Deadlift", "sets": 4},
-            {"exercise_name": "Leg Press", "sets": 3},
-            {"exercise_name": "Leg Extension", "sets": 3},
-            {"exercise_name": "Leg Curl", "sets": 3}
+            {"exercise_name": "Deadlift", "sets": 4, "reps": "5-8", "rest_seconds": 180, "cue": "Heavy hip hinge — neutral spine"},
+            {"exercise_name": "Front Squat", "sets": 3, "reps": "8-12", "rest_seconds": 120, "cue": "Quad emphasis — upright torso"},
+            {"exercise_name": "Romanian Deadlift", "sets": 3, "reps": "10-12", "rest_seconds": 90, "cue": "Hamstring focus"},
+            {"exercise_name": "Leg Curl", "sets": 4, "reps": "10-15", "rest_seconds": 75, "cue": "Hamstring isolation"},
+            {"exercise_name": "Bulgarian Split Squat", "sets": 3, "reps": "10-12 each", "rest_seconds": 90, "cue": "Unilateral — front foot work"},
+            {"exercise_name": "Leg Extension", "sets": 3, "reps": "12-15", "rest_seconds": 60, "cue": "Quad pump"},
+            {"exercise_name": "Hip Thrust", "sets": 4, "reps": "10-15", "rest_seconds": 90, "cue": "Glute power"},
+            {"exercise_name": "Calf Raise", "sets": 4, "reps": "15-20", "rest_seconds": 60, "cue": "Full ROM — squeeze top"}
         ]
     },
     {
         "template_id": "preset_fullbody",
-        "name": "Full Body",
+        "name": "Full Body (Day A)",
         "is_preset": True,
+        "description": "Day A of 3-day full body split — squat focus + heavy push/pull. Pair with Day B and rest day rotation.",
         "exercises": [
-            {"exercise_name": "Squat", "sets": 3},
-            {"exercise_name": "Bench Press", "sets": 3},
-            {"exercise_name": "Barbell Row", "sets": 3},
-            {"exercise_name": "Overhead Press", "sets": 3},
-            {"exercise_name": "Romanian Deadlift", "sets": 3}
+            {"exercise_name": "Squat", "sets": 4, "reps": "6-8", "rest_seconds": 180, "cue": "Heavy compound — drive through heels"},
+            {"exercise_name": "Bench Press", "sets": 4, "reps": "6-8", "rest_seconds": 120, "cue": "Heavy push — touch chest"},
+            {"exercise_name": "Pull Up", "sets": 4, "reps": "6-8", "rest_seconds": 120, "cue": "Heavy pull — weighted if you can"},
+            {"exercise_name": "Romanian Deadlift", "sets": 3, "reps": "10-12", "rest_seconds": 90, "cue": "Hamstring development"},
+            {"exercise_name": "Overhead Press", "sets": 3, "reps": "8-10", "rest_seconds": 90, "cue": "Vertical press strength"},
+            {"exercise_name": "Face Pull", "sets": 3, "reps": "15-20", "rest_seconds": 60, "cue": "Rear delt health"},
+            {"exercise_name": "Incline Curl", "sets": 3, "reps": "10-15", "rest_seconds": 75, "cue": "Bicep long head"},
+            {"exercise_name": "Lateral Raise", "sets": 3, "reps": "15-20", "rest_seconds": 60, "cue": "Medial delts"}
+        ]
+    },
+    {
+        "template_id": "preset_fullbody_b",
+        "name": "Full Body (Day B)",
+        "is_preset": True,
+        "description": "Day B of 3-day full body split — deadlift focus + dumbbell push/pull volume.",
+        "exercises": [
+            {"exercise_name": "Deadlift", "sets": 4, "reps": "5-6", "rest_seconds": 180, "cue": "Heavy hinge — set back position"},
+            {"exercise_name": "Incline Dumbbell Press", "sets": 4, "reps": "8-12", "rest_seconds": 90, "cue": "Upper chest emphasis"},
+            {"exercise_name": "Cable Row", "sets": 4, "reps": "10-12", "rest_seconds": 90, "cue": "Mid back thickness"},
+            {"exercise_name": "Bulgarian Split Squat", "sets": 3, "reps": "10-12 each", "rest_seconds": 90, "cue": "Unilateral leg work"},
+            {"exercise_name": "Lateral Raise", "sets": 4, "reps": "15-20", "rest_seconds": 60, "cue": "Medial delt volume"},
+            {"exercise_name": "Overhead Tricep Extension", "sets": 3, "reps": "12-15", "rest_seconds": 75, "cue": "Tricep stretch"},
+            {"exercise_name": "Leg Curl", "sets": 3, "reps": "10-15", "rest_seconds": 75, "cue": "Hamstring isolation"},
+            {"exercise_name": "Hip Thrust", "sets": 3, "reps": "10-15", "rest_seconds": 90, "cue": "Glute drive"}
         ]
     },
     {
         "template_id": "preset_ppl",
-        "name": "PPL",
+        "name": "PPL Push (use with Pull/Legs)",
         "is_preset": True,
+        "description": "Push session in a Push-Pull-Legs split. Rotate Push/Pull/Legs/Push/Pull/Legs/Rest weekly.",
         "exercises": [
-            {"exercise_name": "Squat", "sets": 4},
-            {"exercise_name": "Bench Press", "sets": 4},
-            {"exercise_name": "Barbell Row", "sets": 4},
-            {"exercise_name": "Overhead Press", "sets": 3},
-            {"exercise_name": "Deadlift", "sets": 3}
+            {"exercise_name": "Incline Dumbbell Press", "sets": 4, "reps": "8-12", "rest_seconds": 120, "cue": "Primary chest mass builder"},
+            {"exercise_name": "Cable Fly", "sets": 3, "reps": "12-15", "rest_seconds": 90, "cue": "Chest stretch"},
+            {"exercise_name": "Dumbbell Bench Press", "sets": 3, "reps": "10-12", "rest_seconds": 90, "cue": "Chest volume"},
+            {"exercise_name": "Dumbbell Shoulder Press", "sets": 4, "reps": "10-12", "rest_seconds": 90, "cue": "Shoulder press"},
+            {"exercise_name": "Cable Lateral Raise", "sets": 4, "reps": "15-20", "rest_seconds": 60, "cue": "Medial delts"},
+            {"exercise_name": "Rear Delt Fly", "sets": 3, "reps": "15-20", "rest_seconds": 60, "cue": "Rear delt health"},
+            {"exercise_name": "Overhead Tricep Extension", "sets": 3, "reps": "12-15", "rest_seconds": 75, "cue": "Tricep long head"},
+            {"exercise_name": "Tricep Pushdown", "sets": 3, "reps": "12-15", "rest_seconds": 75, "cue": "Tricep volume"}
         ]
     }
 ]

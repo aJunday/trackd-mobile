@@ -1634,25 +1634,234 @@ const WRESTLING: Record<Level, Program> = {
 // ============================================================
 // MASTER SPORT LIST
 // ============================================================
+// ============================================================
+// VOLUME AUGMENTATION (Schoenfeld research-based minimums)
+// Beginner: 10-12 sets per muscle group/week
+// Intermediate: 15-18 sets per muscle group/week
+// Advanced: 18-22 sets per muscle group/week
+// Per-session minimums per user spec:
+//   Boxing: 8 exercises | Soccer: 7 | Powerlifting: keep main + accessories | Calisthenics: skills + drills | Others: 6-8
+// ============================================================
+
+type AccessoryPool = Exercise[];
+
+// Sport-specific accessory pools (used to pad under-volume sessions)
+const ACCESSORIES: Record<string, AccessoryPool> = {
+  boxing: [
+    ex('Neck Curl', 3, '12-15', '45s', 'Lying neck curl with plate — head trauma prevention'),
+    ex('Russian Twist (weighted)', 3, '15 each side', '45s', 'Rotational core power for punches'),
+    ex('Cable Woodchop', 3, '12 each side', '45s', 'Hip-driven rotation, mimics cross power'),
+    ex('Burpee', 3, '10', '45s', 'Anaerobic conditioning'),
+    ex('Battle Rope Slams', 4, '30s rounds', '30s', 'Match-style conditioning rounds'),
+    ex('Heavy Bag — Body Shots', 3, '2 min round', '60s', 'Stay relaxed, breathe through punches'),
+  ],
+  powerlifting: [
+    ex('Hammer Curl', 3, '10-12', '60s', 'Bicep + grip support for pulls'),
+    ex('Tricep Pushdown', 3, '10-15', '60s', 'Lockout strength on bench'),
+    ex('Barbell Row', 3, '8-10', '90s', 'Back accessory for squat/dead'),
+    ex('Romanian Deadlift', 3, '8-10', '90s', 'Posterior chain assistance'),
+    ex('Pause Squat', 3, '5', '180s', '3-second pause — out of the hole strength'),
+    ex('Close-Grip Bench Press', 3, '6-8', '120s', 'Tricep-driven bench accessory'),
+    ex('Good Morning', 3, '8-10', '90s', 'Erector & hamstring strength'),
+  ],
+  calisthenics: [
+    ex('L-Sit Hold', 3, '15-30s', '60s', 'Core + compression — straddle if needed'),
+    ex('Pseudo Planche Lean', 3, '20s', '60s', 'Planche progression — stack shoulders forward'),
+    ex('Tuck Front Lever Hold', 3, '10-20s', '60s', 'Lat + core static — knees to chest'),
+    ex('Skin the Cat', 3, '5', '60s', 'Shoulder mobility + control on rings/bar'),
+    ex('Pistol Squat Progression', 3, '5 each side', '90s', 'Box-assisted if not full ROM'),
+    ex('Hollow Body Hold', 3, '20-30s', '45s', 'Ribs down, lower back pressed flat'),
+  ],
+  soccer: [
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Hamstring + glute + balance — injury prevention'),
+    ex('Copenhagen Plank', 3, '15-30s each side', '45s', 'Adductor strength — groin injury prevention'),
+    ex('Bounding (alt-leg)', 3, '20m', '60s', 'Plyometric stride length'),
+    ex('Lateral Lunge', 3, '8 each side', '60s', 'Frontal-plane mobility + strength'),
+    ex('Nordic Curl', 3, '5-8', '90s', 'Eccentric hamstring — hamstring tear prevention'),
+    ex('Glute Bridge March', 3, '10 each side', '45s', 'Glute activation + core control'),
+  ],
+  basketball: [
+    ex('Box Jump', 3, '5', '90s', 'Vertical power — step down between reps'),
+    ex('Bulgarian Split Squat', 3, '8 each side', '90s', 'Unilateral leg drive for jumps'),
+    ex('Calf Raise', 4, '12-15', '60s', 'Achilles resilience — landing absorption'),
+    ex('Romanian Deadlift', 3, '8-10', '90s', 'Hamstring strength — sprint mechanics'),
+    ex('Med Ball Chest Pass', 3, '6', '60s', 'Upper body explosive power'),
+    ex('Lateral Bound', 3, '6 each side', '60s', 'Defensive cuts'),
+  ],
+  swimming: [
+    ex('Lat Pulldown', 3, '10-12', '75s', 'Pull strength for stroke'),
+    ex('Face Pull', 3, '15-20', '60s', 'Rotator cuff health — shoulder durability'),
+    ex('Pallof Press', 3, '10 each side', '45s', 'Anti-rotation core — streamline strength'),
+    ex('Push-Up', 3, '10-15', '60s', 'Stroke pushing strength'),
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Kick power + balance'),
+    ex('Kickboard Sprint', 3, '50m', '60s', 'Leg endurance for finish'),
+  ],
+  track: [
+    ex('Hip Thrust', 4, '8-10', '90s', 'Glute power for stride'),
+    ex('Bulgarian Split Squat', 3, '8 each side', '90s', 'Unilateral hip strength'),
+    ex('A-Skip', 3, '20m', '45s', 'Sprint mechanics drill'),
+    ex('Med Ball Slam', 3, '8', '45s', 'Vertical power'),
+    ex('Romanian Deadlift', 3, '8-10', '90s', 'Hamstring mass + strength'),
+    ex('Calf Raise', 4, '12-15', '60s', 'Ankle stiffness for sprint'),
+  ],
+  mma: [
+    ex('Turkish Get-Up', 3, '3 each side', '60s', 'Full body control + shoulder stability'),
+    ex('Single Arm Row', 3, '10 each side', '60s', 'Pulling strength for clinch / takedowns'),
+    ex('Bear Crawl', 3, '20m', '45s', 'Coordination + scramble strength'),
+    ex('Front Squat', 3, '6-8', '120s', 'Squat strength — preserves trunk position'),
+    ex('Chin-Up', 3, '6-10', '90s', 'Pulling for grappling'),
+    ex('Burpee', 3, '8', '45s', 'Conditioning'),
+  ],
+  volleyball: [
+    ex('Box Jump', 3, '5', '90s', 'Vertical jump'),
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Hamstring + balance'),
+    ex('Face Pull', 4, '15', '60s', 'Shoulder durability — overhead spike health'),
+    ex('External Rotation (band)', 3, '12 each side', '45s', 'Rotator cuff'),
+    ex('Calf Raise', 3, '15', '60s', 'Spring ankle'),
+    ex('Pallof Press', 3, '10 each side', '45s', 'Anti-rotation core'),
+  ],
+  hockey: [
+    ex('Lateral Lunge', 3, '8 each side', '60s', 'Skating stride mobility'),
+    ex('Goblet Squat', 3, '10', '60s', 'Skating depth strength'),
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Edge control balance'),
+    ex('Pallof Press', 3, '10 each side', '45s', 'Slap-shot core stability'),
+    ex('Med Ball Rotational Throw', 3, '6 each side', '60s', 'Shot power'),
+    ex('Sled Push', 3, '20m', '90s', 'Skating start power'),
+  ],
+  baseball: [
+    ex('Med Ball Rotational Slam', 3, '6 each side', '60s', 'Bat speed / pitch velocity'),
+    ex('External Rotation (band)', 3, '15 each side', '45s', 'Rotator cuff health — pitching arm'),
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Stride leg balance'),
+    ex('Cable Woodchop', 3, '10 each side', '45s', 'Hip rotation transfer'),
+    ex('Romanian Deadlift', 3, '8-10', '90s', 'Posterior chain'),
+    ex('Reverse Lunge', 3, '8 each side', '60s', 'Stride mechanics'),
+  ],
+  rugby: [
+    ex('Yoke Walk (or Farmer)', 3, '20m', '120s', 'Trap & grip strength for contact'),
+    ex('Pendlay Row', 3, '8', '90s', 'Pulling strength for tackles'),
+    ex('Bulgarian Split Squat', 3, '8 each side', '90s', 'Unilateral leg drive'),
+    ex('Neck Curl', 3, '12-15', '45s', 'Neck strength — concussion mitigation'),
+    ex('Sled Push', 3, '20m', '120s', 'Scrum drive power'),
+    ex('Pallof Press', 3, '10 each side', '45s', 'Anti-rotation for collisions'),
+  ],
+  cycling: [
+    ex('Bulgarian Split Squat', 3, '10 each side', '75s', 'Unilateral pedal stroke power'),
+    ex('Goblet Squat', 3, '10', '60s', 'Quad strength on climbs'),
+    ex('Romanian Deadlift', 3, '8-10', '90s', 'Hamstring balance'),
+    ex('Hip Thrust', 3, '10', '75s', 'Glute drive — out of saddle power'),
+    ex('Plank', 3, '45s', '45s', 'Saddle stability core'),
+    ex('Side Plank', 3, '30s each side', '45s', 'Lateral trunk for sprints'),
+  ],
+  gymnastics: [
+    ex('Hollow Body Hold', 3, '30s', '45s', 'Foundation hold for all skills'),
+    ex('Arch Body Hold', 3, '20s', '45s', 'Posterior chain shape'),
+    ex('Pseudo Planche Lean', 3, '20s', '60s', 'Planche progression'),
+    ex('Tuck Front Lever Hold', 3, '15s', '60s', 'Lat compression'),
+    ex('Wall Handstand Hold', 3, '30s', '60s', 'Vertical balance'),
+    ex('Skin the Cat', 3, '5', '60s', 'Shoulder mobility on rings'),
+  ],
+  golf: [
+    ex('Cable Woodchop (high to low)', 3, '10 each side', '45s', 'Swing pattern rotation'),
+    ex('Pallof Press', 3, '10 each side', '45s', 'Anti-rotation — swing stability'),
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Trail leg balance'),
+    ex('Goblet Squat', 3, '10', '60s', 'Hip mobility + posture'),
+    ex('Bird Dog', 3, '8 each side', '45s', 'Spinal stability'),
+    ex('Med Ball Rotational Throw', 3, '6 each side', '60s', 'Rotational power transfer'),
+  ],
+  wrestling: [
+    ex('Bear Crawl', 3, '20m', '45s', 'Scramble strength'),
+    ex('Sled Push', 3, '20m', '90s', 'Drive power'),
+    ex('Pull-Up', 3, '6-10', '90s', 'Pulling strength for ties'),
+    ex('Front Squat', 3, '6-8', '120s', 'Hold-position strength'),
+    ex('Turkish Get-Up', 3, '3 each side', '60s', 'Floor scramble + control'),
+    ex('Neck Curl', 3, '12-15', '45s', 'Neck strength for bridges'),
+  ],
+  football: [
+    ex('Box Jump', 3, '5', '90s', 'Vertical power'),
+    ex('Bulgarian Split Squat', 3, '8 each side', '90s', 'Unilateral leg drive'),
+    ex('Pendlay Row', 3, '8', '90s', 'Back strength for blocks'),
+    ex('Sled Push', 3, '20m', '120s', 'Drive power'),
+    ex('Med Ball Rotational Throw', 3, '6 each side', '60s', 'Rotational power'),
+    ex('Neck Curl', 3, '12-15', '45s', 'Concussion mitigation'),
+  ],
+  general: [
+    ex('Lateral Lunge', 3, '8 each side', '60s', 'Frontal-plane mobility'),
+    ex('Face Pull', 3, '15', '60s', 'Posture + shoulder health'),
+    ex('Plank', 3, '45s', '45s', 'Core stability'),
+    ex('Hip Thrust', 3, '10-12', '75s', 'Glute strength'),
+    ex('Single Leg RDL', 3, '8 each side', '60s', 'Balance + posterior chain'),
+    ex('Push-Up', 3, '10-15', '60s', 'Bodyweight push'),
+  ],
+};
+
+// Per-sport per-session minimum exercise count
+const MIN_EX_PER_SESSION: Record<string, number> = {
+  boxing: 8,
+  soccer: 7,
+  powerlifting: 6, // main lift + accessories
+  calisthenics: 7,
+  basketball: 7,
+  football: 7,
+  swimming: 7,
+  track: 6,
+  mma: 8,
+  volleyball: 7,
+  hockey: 7,
+  baseball: 7,
+  rugby: 7,
+  cycling: 6,
+  gymnastics: 8,
+  golf: 6,
+  wrestling: 8,
+  general: 7,
+};
+
+const augmentProgram = (sportId: string, prog: Program): Program => {
+  const minN = MIN_EX_PER_SESSION[sportId] ?? 6;
+  const pool = ACCESSORIES[sportId] ?? ACCESSORIES.general;
+  const augmentedWeekly = prog.weekly.map((day) => {
+    if (day.day === 'Rest' || day.exercises.length === 0) return day;
+    if (day.exercises.length >= minN) return day;
+    // Pad with accessories not already in this day's plan
+    const have = new Set(day.exercises.map((e) => e.name.toLowerCase()));
+    const adds: Exercise[] = [];
+    for (const a of pool) {
+      if (adds.length + day.exercises.length >= minN) break;
+      if (!have.has(a.name.toLowerCase())) {
+        adds.push(a);
+        have.add(a.name.toLowerCase());
+      }
+    }
+    return { ...day, exercises: [...day.exercises, ...adds] };
+  });
+  return { ...prog, weekly: augmentedWeekly };
+};
+
+const augmentSport = (sportId: string, programs: Record<Level, Program>): Record<Level, Program> => ({
+  beginner: augmentProgram(sportId, programs.beginner),
+  intermediate: augmentProgram(sportId, programs.intermediate),
+  advanced: augmentProgram(sportId, programs.advanced),
+});
+
 export const SPORTS: Sport[] = [
-  { id: 'boxing', name: 'Boxing', emoji: '🥊', category: 'combat', blurb: 'Punch mechanics + anaerobic power', programs: BOXING },
-  { id: 'calisthenics', name: 'Calisthenics', emoji: '🤸', category: 'skill', blurb: 'Body-weight strength + skills', programs: CALISTHENICS },
-  { id: 'soccer', name: 'Soccer', emoji: '⚽', category: 'team', blurb: 'Speed, agility, aerobic base', programs: SOCCER },
-  { id: 'basketball', name: 'Basketball', emoji: '🏀', category: 'team', blurb: 'Vertical jump + shooting', programs: BASKETBALL },
-  { id: 'football', name: 'American Football', emoji: '🏈', category: 'team', blurb: 'Max strength + positional power', programs: FOOTBALL },
-  { id: 'swimming', name: 'Swimming', emoji: '🏊', category: 'endurance', blurb: 'Technique + cardio capacity', programs: SWIMMING },
-  { id: 'powerlifting', name: 'Powerlifting', emoji: '🏋️', category: 'strength', blurb: 'Squat / Bench / Deadlift 1RM', programs: POWERLIFTING },
-  { id: 'track', name: 'Track & Field', emoji: '🏃', category: 'endurance', blurb: 'Running & event-specific speed', programs: TRACK },
-  { id: 'mma', name: 'MMA', emoji: '🥋', category: 'combat', blurb: 'Striking + grappling + cardio', programs: MMA },
-  { id: 'volleyball', name: 'Volleyball', emoji: '🏐', category: 'team', blurb: 'Vertical jump + shoulder durability', programs: VOLLEYBALL },
-  { id: 'hockey', name: 'Hockey', emoji: '🏒', category: 'team', blurb: 'Skating power + shot velocity', programs: HOCKEY },
-  { id: 'baseball', name: 'Baseball', emoji: '⚾', category: 'team', blurb: 'Rotational power + arm health', programs: BASEBALL },
-  { id: 'rugby', name: 'Rugby', emoji: '🏉', category: 'team', blurb: 'Contact strength + match cardio', programs: RUGBY },
-  { id: 'cycling', name: 'Cycling', emoji: '🚴', category: 'endurance', blurb: 'FTP, climbing, endurance', programs: CYCLING },
-  { id: 'gymnastics', name: 'Gymnastics', emoji: '🤸', category: 'skill', blurb: 'Handstand, rings, tumbling', programs: GYMNASTICS },
-  { id: 'golf', name: 'Golf', emoji: '⛳', category: 'skill', blurb: 'Rotational power + mobility', programs: GOLF },
-  { id: 'wrestling', name: 'Wrestling', emoji: '🤼', category: 'combat', blurb: 'Takedowns + anaerobic capacity', programs: WRESTLING },
-  { id: 'general', name: 'General Fitness', emoji: '💪', category: 'general', blurb: 'Strength + cardio + longevity', programs: GENERAL },
+  { id: 'boxing', name: 'Boxing', emoji: '🥊', category: 'combat', blurb: 'Punch mechanics + anaerobic power', programs: augmentSport('boxing', BOXING) },
+  { id: 'calisthenics', name: 'Calisthenics', emoji: '🤸', category: 'skill', blurb: 'Body-weight strength + skills', programs: augmentSport('calisthenics', CALISTHENICS) },
+  { id: 'soccer', name: 'Soccer', emoji: '⚽', category: 'team', blurb: 'Speed, agility, aerobic base', programs: augmentSport('soccer', SOCCER) },
+  { id: 'basketball', name: 'Basketball', emoji: '🏀', category: 'team', blurb: 'Vertical jump + shooting', programs: augmentSport('basketball', BASKETBALL) },
+  { id: 'football', name: 'American Football', emoji: '🏈', category: 'team', blurb: 'Max strength + positional power', programs: augmentSport('football', FOOTBALL) },
+  { id: 'swimming', name: 'Swimming', emoji: '🏊', category: 'endurance', blurb: 'Technique + cardio capacity', programs: augmentSport('swimming', SWIMMING) },
+  { id: 'powerlifting', name: 'Powerlifting', emoji: '🏋️', category: 'strength', blurb: 'Squat / Bench / Deadlift 1RM', programs: augmentSport('powerlifting', POWERLIFTING) },
+  { id: 'track', name: 'Track & Field', emoji: '🏃', category: 'endurance', blurb: 'Running & event-specific speed', programs: augmentSport('track', TRACK) },
+  { id: 'mma', name: 'MMA', emoji: '🥋', category: 'combat', blurb: 'Striking + grappling + cardio', programs: augmentSport('mma', MMA) },
+  { id: 'volleyball', name: 'Volleyball', emoji: '🏐', category: 'team', blurb: 'Vertical jump + shoulder durability', programs: augmentSport('volleyball', VOLLEYBALL) },
+  { id: 'hockey', name: 'Hockey', emoji: '🏒', category: 'team', blurb: 'Skating power + shot velocity', programs: augmentSport('hockey', HOCKEY) },
+  { id: 'baseball', name: 'Baseball', emoji: '⚾', category: 'team', blurb: 'Rotational power + arm health', programs: augmentSport('baseball', BASEBALL) },
+  { id: 'rugby', name: 'Rugby', emoji: '🏉', category: 'team', blurb: 'Contact strength + match cardio', programs: augmentSport('rugby', RUGBY) },
+  { id: 'cycling', name: 'Cycling', emoji: '🚴', category: 'endurance', blurb: 'FTP, climbing, endurance', programs: augmentSport('cycling', CYCLING) },
+  { id: 'gymnastics', name: 'Gymnastics', emoji: '🤸', category: 'skill', blurb: 'Handstand, rings, tumbling', programs: augmentSport('gymnastics', GYMNASTICS) },
+  { id: 'golf', name: 'Golf', emoji: '⛳', category: 'skill', blurb: 'Rotational power + mobility', programs: augmentSport('golf', GOLF) },
+  { id: 'wrestling', name: 'Wrestling', emoji: '🤼', category: 'combat', blurb: 'Takedowns + anaerobic capacity', programs: augmentSport('wrestling', WRESTLING) },
+  { id: 'general', name: 'General Fitness', emoji: '💪', category: 'general', blurb: 'Strength + cardio + longevity', programs: augmentSport('general', GENERAL) },
 ];
 
 export const LEVEL_DESCRIPTIONS: Record<Level, string> = {
