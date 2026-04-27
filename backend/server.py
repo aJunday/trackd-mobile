@@ -36,6 +36,7 @@ measurements_router = APIRouter(prefix="/measurements", tags=["measurements"])
 templates_router = APIRouter(prefix="/templates", tags=["templates"])
 scanner_router = APIRouter(prefix="/scanner", tags=["scanner"])
 programs_router = APIRouter(prefix="/programs", tags=["programs"])
+coach_router = APIRouter(prefix="/coach", tags=["coach"])
 
 # Configure logging
 logging.basicConfig(
@@ -2603,6 +2604,429 @@ async def program_history(user: User = Depends(get_current_user)):
     return {"history": docs}
 
 
+# ==================== AI NUTRITION COACH ====================
+
+class SnoozeRequest(BaseModel):
+    insight_id: str
+    hours: int = 24
+
+@coach_router.post("/snooze")
+async def snooze_insight(req: SnoozeRequest, user: User = Depends(get_current_user)):
+    """Snooze a specific insight for N hours."""
+    expires = datetime.now(timezone.utc) + timedelta(hours=req.hours)
+    await db.coach_snoozes.update_one(
+        {"user_id": user.user_id, "insight_id": req.insight_id},
+        {"$set": {"expires_at": expires, "user_id": user.user_id, "insight_id": req.insight_id}},
+        upsert=True,
+    )
+    return {"success": True, "expires_at": expires.isoformat()}
+
+
+@coach_router.get("/insights")
+async def coach_insights(user: User = Depends(get_current_user)):
+    """Run all coach rules and return prioritized insights with user's exact numbers."""
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+    insights = []
+
+    # Load active snoozes
+    snooze_cursor = db.coach_snoozes.find({"user_id": user.user_id, "expires_at": {"$gt": now}})
+    snoozed = {s["insight_id"] async for s in snooze_cursor}
+
+    # Get user data
+    user_doc = await db.users.find_one({"user_id": user.user_id}) or {}
+    goal_type = user_doc.get("goal_type")
+    weight_kg = user_doc.get("weight_kg") or user_doc.get("weight") or 0
+    age = user_doc.get("age") or 30
+    sex = user_doc.get("biological_sex") or "male"
+    height_cm = user_doc.get("height_cm") or 175
+    activity_level = user_doc.get("activity_level") or "moderately_active"
+    target_calories = user_doc.get("goal_calories") or 2200
+    target_protein = user_doc.get("goal_protein") or 150
+
+    activity_mult = {
+        "sedentary": 1.2, "lightly_active": 1.375, "moderately_active": 1.55,
+        "very_active": 1.725, "extra_active": 1.9
+    }.get(activity_level, 1.55)
+
+    # Weight history (last 60 days)
+    cutoff_60 = now - timedelta(days=60)
+    measurements = await db.body_measurements.find(
+        {"user_id": user.user_id, "date": {"$gte": cutoff_60.strftime("%Y-%m-%d")}},
+        {"_id": 0}
+    ).sort("date", 1).to_list(200)
+
+    # Meals last 14 days
+    cutoff_14 = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+    meals = await db.meals.find(
+        {"user_id": user.user_id, "date": {"$gte": cutoff_14}},
+        {"_id": 0}
+    ).sort("date", -1).to_list(500)
+
+    # Group meals by date
+    meals_by_date = {}
+    for m in meals:
+        d = m.get("date")
+        if not d:
+            continue
+        meals_by_date.setdefault(d, []).append(m)
+
+    # ---------- RULE: PLATEAU DETECTION (cutting only) ----------
+    if goal_type == "lose_fat" and len(measurements) >= 2:
+        last_14 = [m for m in measurements
+                   if datetime.strptime(m["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                   >= now - timedelta(days=14)]
+        if len(last_14) >= 2:
+            weights = [m.get("weight_kg") for m in last_14 if m.get("weight_kg")]
+            if len(weights) >= 2:
+                delta = weights[-1] - weights[0]
+                if abs(delta) <= 0.5:
+                    days_span = (
+                        datetime.strptime(last_14[-1]["date"], "%Y-%m-%d")
+                        - datetime.strptime(last_14[0]["date"], "%Y-%m-%d")
+                    ).days
+                    # Calculate plateau-busting suggestions in priority order
+                    suggestions = []
+
+                    # 1. Calorie Audit
+                    suggestions.append({
+                        "title": "Calorie Audit",
+                        "body": "You may be underestimating portions. Try weighing your food for 3 days to verify your actual intake matches your logged intake.",
+                    })
+
+                    # 2. Recalculated TDEE based on current weight
+                    current_w = weights[-1]
+                    if sex == "male":
+                        bmr = 10 * current_w + 6.25 * height_cm - 5 * age + 5
+                    else:
+                        bmr = 10 * current_w + 6.25 * height_cm - 5 * age - 161
+                    new_tdee = round(bmr * activity_mult)
+                    new_target = new_tdee - 400  # standard cut
+                    suggestions.append({
+                        "title": "Update Calorie Target",
+                        "body": f"Your TDEE has decreased as you've lost weight. Based on your current weight ({current_w}kg), your new TDEE is {new_tdee} kcal and a moderate cut target is {new_target} kcal.",
+                    })
+
+                    # 3. Diet Break (if cutting > 8 weeks)
+                    weeks_cutting = days_span // 7 + 4  # at least 4 weeks if plateau is 14d
+                    suggestions.append({
+                        "title": "Diet Break",
+                        "body": f"You've been in a deficit for ~{weeks_cutting} weeks. A 1-2 week diet break at maintenance ({new_tdee} kcal) can reset leptin and improve fat loss.",
+                    })
+
+                    # 4. Refeed
+                    refeed_carbs = round((new_tdee - 0.25 * new_tdee - target_protein * 4) / 4)
+                    suggestions.append({
+                        "title": "Refeed Day",
+                        "body": f"Try eating at maintenance ({new_tdee} kcal) one day this week — specifically higher carbs (~{refeed_carbs}g). This restores glycogen and key hormones.",
+                    })
+
+                    # 5. Protein Check
+                    protein_target = round(weight_kg * 1.8)
+                    avg_p = 0
+                    if meals_by_date:
+                        all_proteins = [
+                            sum(m.get("protein", 0) for m in ms)
+                            for ms in meals_by_date.values()
+                        ]
+                        avg_p = sum(all_proteins) / len(all_proteins)
+                    if avg_p < protein_target * 0.9:
+                        suggestions.append({
+                            "title": "Protein Check",
+                            "body": f"You're averaging {round(avg_p)}g protein/day. Increasing to {protein_target}g preserves muscle during your cut and improves satiety.",
+                        })
+
+                    insights.append({
+                        "id": "plateau",
+                        "type": "plateau",
+                        "priority": 100,
+                        "severity": "warn",
+                        "title": "Progress has stalled",
+                        "message": f"Your weight has only changed by {round(delta, 1)}kg in the last {days_span} days while cutting.",
+                        "science": "Energy balance research shows that as body mass decreases, TDEE drops too — this is metabolic adaptation. Adjusting intake or taking a diet break is well-supported by Trexler et al. (2014) and others.",
+                        "data": {"delta_kg": round(delta, 2), "days": days_span, "current_weight": weights[-1]},
+                        "suggestions": suggestions,
+                    })
+
+    # ---------- RULE: SAME DIET WARNING ----------
+    if not insights or True:
+        # Hash each day's meal names sorted
+        day_signatures = {}
+        for d, ms in meals_by_date.items():
+            names = sorted([m.get("name", "").strip().lower() for m in ms if m.get("name")])
+            if not names:
+                continue
+            sig = "|".join(names)
+            day_signatures[d] = sig
+        # Find longest streak of identical signatures across consecutive days
+        sorted_days = sorted(day_signatures.keys(), reverse=True)
+        streak = 1
+        if len(sorted_days) >= 2:
+            for i in range(1, len(sorted_days)):
+                d_prev = datetime.strptime(sorted_days[i - 1], "%Y-%m-%d")
+                d_now = datetime.strptime(sorted_days[i], "%Y-%m-%d")
+                if (d_prev - d_now).days != 1:
+                    break
+                if day_signatures[sorted_days[i - 1]] == day_signatures[sorted_days[i]]:
+                    streak += 1
+                else:
+                    break
+        if streak >= 5:
+            # Pull pantry items for recipe ideas
+            pantry = await db.pantry_items.find(
+                {"user_id": user.user_id}, {"_id": 0}
+            ).to_list(20)
+            pantry_names = [p.get("name") or p.get("item_name") for p in pantry][:5]
+            recipes = []
+            if pantry_names:
+                recipes = [
+                    f"Stir-fry with {pantry_names[0]}" + (f" + {pantry_names[1]}" if len(pantry_names) > 1 else ""),
+                    f"Bowl with {pantry_names[2 if len(pantry_names) > 2 else 0]} as the base",
+                    f"Wrap or roll featuring {pantry_names[-1]}",
+                ]
+            else:
+                recipes = [
+                    "High-protein omelet with vegetables",
+                    "Greek yogurt + berries + nut butter bowl",
+                    "Chicken + rice + roasted veg plate",
+                ]
+            insights.append({
+                "id": "same_diet",
+                "type": "same_diet",
+                "priority": 60,
+                "severity": "info",
+                "title": f"{streak} days of identical meals",
+                "message": f"You've eaten the same meals for {streak} days. Consistency is great — but variety ensures you cover all micronutrients.",
+                "science": "USDA dietary guidelines and the EAT-Lancet report both recommend rotating ≥30 plant species/week to maximize micronutrient diversity.",
+                "data": {"streak_days": streak},
+                "suggestions": [{"title": r, "body": ""} for r in recipes],
+            })
+
+    # ---------- RULE: WEEKLY REVIEW (Sundays) ----------
+    is_sunday = now.weekday() == 6  # Mon=0..Sun=6
+    week_start = (now - timedelta(days=now.weekday() + 1)).date()  # last Sunday
+    if is_sunday or True:  # always available, prioritized on Sunday
+        week_dates = [(week_start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        week_meals = [m for m in meals if m.get("date") in week_dates]
+        if week_meals:
+            daily_kcal = {}
+            daily_protein = {}
+            for m in week_meals:
+                d = m["date"]
+                daily_kcal[d] = daily_kcal.get(d, 0) + (m.get("calories") or 0)
+                daily_protein[d] = daily_protein.get(d, 0) + (m.get("protein") or 0)
+            avg_kcal = round(sum(daily_kcal.values()) / max(1, len(daily_kcal)))
+            avg_protein = round(sum(daily_protein.values()) / max(1, len(daily_protein)))
+            protein_pct = round(100 * avg_protein / max(1, target_protein))
+
+            # Weight change in week
+            week_weights = [
+                m.get("weight_kg") for m in measurements
+                if m.get("date") in week_dates and m.get("weight_kg")
+            ]
+            weight_change = 0
+            if len(week_weights) >= 2:
+                weight_change = round(week_weights[-1] - week_weights[0], 2)
+
+            # Workouts last 7 days
+            cutoff_7 = (now - timedelta(days=7))
+            workouts = await db.workouts.find(
+                {"user_id": user.user_id, "completed_at": {"$gte": cutoff_7}},
+                {"_id": 0, "exercises": 0}
+            ).to_list(20)
+            workouts_done = len(workouts)
+
+            # Estimated fat loss
+            kcal_diff = (target_calories - avg_kcal) * 7
+            est_kg = round(kcal_diff / 7700, 2) if goal_type == "lose_fat" else None
+
+            summary = (
+                f"This week you averaged {avg_kcal} kcal against your {target_calories} kcal goal. "
+                f"Protein was {avg_protein}g ({protein_pct}% of {target_protein}g target). "
+                f"You completed {workouts_done} workouts. "
+            )
+            if est_kg is not None:
+                summary += f"Estimated fat loss this week: ~{est_kg}kg."
+
+            # Pick weakest area
+            weakest_area = "calories"
+            if protein_pct < 80:
+                weakest_area = "protein"
+                action = f"Hit {target_protein}g protein next week (you were {avg_protein}g). Add 1 protein-forward meal per day."
+            elif workouts_done < 3:
+                weakest_area = "consistency"
+                action = "Aim for 3-4 workouts next week. Schedule them as calendar events."
+            elif goal_type == "lose_fat" and avg_kcal > target_calories + 100:
+                action = f"Cut ~{avg_kcal - target_calories} kcal/day to stay on track."
+            elif goal_type == "build_muscle" and avg_kcal < target_calories - 100:
+                action = f"Add ~{target_calories - avg_kcal} kcal/day to hit your surplus."
+            else:
+                action = "Keep doing what you're doing — solid week."
+
+            insights.append({
+                "id": f"weekly_{week_start.strftime('%Y%m%d')}",
+                "type": "weekly_review",
+                "priority": 90 if is_sunday else 50,
+                "severity": "info",
+                "title": "Weekly Review",
+                "message": summary,
+                "science": "Weekly averages smooth daily noise — they're a more accurate signal of progress than any single day, per Hall (2008).",
+                "data": {
+                    "avg_kcal": avg_kcal, "target_kcal": target_calories,
+                    "avg_protein": avg_protein, "target_protein": target_protein,
+                    "weight_change_kg": weight_change,
+                    "workouts_done": workouts_done,
+                    "estimated_change_kg": est_kg,
+                },
+                "suggestions": [{"title": f"Focus area: {weakest_area}", "body": action}],
+            })
+
+    # ---------- RULE: CUTTING DEFICIT TRACKER ----------
+    if goal_type == "lose_fat":
+        # 7-day window
+        cutoff_7d = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        recent_meals = [m for m in meals if m.get("date", "") >= cutoff_7d]
+        if recent_meals:
+            kcal_per_day = {}
+            for m in recent_meals:
+                d = m["date"]
+                kcal_per_day[d] = kcal_per_day.get(d, 0) + (m.get("calories") or 0)
+            days_logged = len(kcal_per_day)
+            avg_kcal = round(sum(kcal_per_day.values()) / days_logged) if days_logged else 0
+            # TDEE (use stored or recalc)
+            tdee_now = user_doc.get("tdee") or round(
+                (10 * weight_kg + 6.25 * height_cm - 5 * age + (5 if sex == "male" else -161)) * activity_mult
+            )
+            daily_deficit = tdee_now - avg_kcal
+            weekly_deficit = daily_deficit * 7
+            est_loss_week = round(weekly_deficit / 7700, 2)
+
+            # Time to goal weight (assume goal is 5kg below current if not set)
+            goal_weight = user_doc.get("goal_weight_kg") or (weight_kg - 5)
+            kg_to_go = max(0, weight_kg - goal_weight)
+            weeks_to_goal = round(kg_to_go / max(0.05, est_loss_week)) if est_loss_week > 0 else None
+
+            # Warnings
+            warnings = []
+            if daily_deficit > 500:
+                warnings.append({
+                    "title": "Aggressive deficit",
+                    "body": f"Your daily deficit of {daily_deficit} kcal exceeds the recommended max of 500. This may cause muscle loss. Consider eating ~{tdee_now - 500} kcal/day instead.",
+                })
+
+            # Protein during cut
+            avg_p_cut = sum(
+                sum(m.get("protein", 0) for m in ms) for ms in meals_by_date.values()
+            ) / max(1, len(meals_by_date))
+            protein_min = weight_kg * 1.8
+            if avg_p_cut < protein_min:
+                warnings.append({
+                    "title": "Low protein during cut",
+                    "body": f"Average protein is {round(avg_p_cut)}g/day, below {round(protein_min)}g (1.8g/kg). Increase protein to preserve lean mass.",
+                    "highlight_protein_red": True,
+                })
+
+            insights.append({
+                "id": "cutting_deficit",
+                "type": "cutting_deficit",
+                "priority": 80,
+                "severity": "info" if not warnings else "warn",
+                "title": "Cut tracker",
+                "message": f"Weekly deficit: {weekly_deficit} kcal · est. loss this week: ~{est_loss_week}kg.",
+                "science": "1 kg of body fat ≈ 7700 kcal. Sustainable cuts target 0.5-1% body weight loss per week (Helms et al. 2014).",
+                "data": {
+                    "daily_deficit": daily_deficit, "weekly_deficit": weekly_deficit,
+                    "est_loss_week_kg": est_loss_week,
+                    "weeks_to_goal": weeks_to_goal, "goal_weight_kg": goal_weight,
+                    "tdee": tdee_now, "avg_kcal": avg_kcal,
+                },
+                "suggestions": warnings,
+            })
+
+    # ---------- RULE: BULKING UNDER-EATING ----------
+    if goal_type == "build_muscle":
+        cutoff_3d = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+        recent = [m for m in meals if m.get("date", "") >= cutoff_3d]
+        if recent:
+            kcal_3 = {}
+            for m in recent:
+                d = m["date"]
+                kcal_3[d] = kcal_3.get(d, 0) + (m.get("calories") or 0)
+            days_under = sum(1 for v in kcal_3.values() if v < target_calories - 100)
+            if days_under >= 3:
+                insights.append({
+                    "id": "bulk_under",
+                    "type": "bulking_under",
+                    "priority": 80,
+                    "severity": "warn",
+                    "title": "Under your surplus",
+                    "message": f"You've been under {target_calories} kcal for {days_under} days. To maximize muscle growth, hit your target consistently.",
+                    "science": "Lean bulks of 200-400 kcal/day produce optimal muscle gain with minimal fat (Slater & Phillips 2011).",
+                    "data": {"days_under": days_under, "target": target_calories},
+                    "suggestions": [{"title": "Add a snack", "body": f"A protein shake + banana adds ~350 kcal effortlessly."}],
+                })
+            # Weekly muscle gain estimate
+            tdee_now = user_doc.get("tdee") or target_calories - 250
+            avg_kcal_3 = sum(kcal_3.values()) / max(1, len(kcal_3))
+            surplus = avg_kcal_3 - tdee_now
+            if 200 <= surplus <= 500:
+                low = round(surplus / 7700 * 7 * 0.5, 2)
+                high = round(surplus / 7700 * 7, 2)
+                insights.append({
+                    "id": "bulk_estimate",
+                    "type": "bulking_estimate",
+                    "priority": 50,
+                    "severity": "success",
+                    "title": "Optimal lean bulk",
+                    "message": f"At your current surplus ({round(surplus)} kcal/day) you're in the optimal range for ~{low}-{high}kg/wk lean muscle gain.",
+                    "science": "200-500 kcal surplus optimizes muscle:fat gain ratio (Slater & Phillips 2011).",
+                    "data": {"surplus": round(surplus), "estimate_low": low, "estimate_high": high},
+                    "suggestions": [],
+                })
+
+    # ---------- RULE: MAINTENANCE ----------
+    if goal_type == "maintain":
+        cutoff_14d = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+        recent = [m for m in meals if m.get("date", "") >= cutoff_14d]
+        if recent:
+            kcal_14 = {}
+            for m in recent:
+                d = m["date"]
+                kcal_14[d] = kcal_14.get(d, 0) + (m.get("calories") or 0)
+            avg_kcal_14 = sum(kcal_14.values()) / max(1, len(kcal_14))
+            tdee_now = user_doc.get("tdee") or target_calories
+            diff = avg_kcal_14 - tdee_now
+            if diff > 100:
+                insights.append({
+                    "id": "maint_over",
+                    "type": "maintenance",
+                    "priority": 60,
+                    "severity": "info",
+                    "title": "Trending up",
+                    "message": f"You've averaged {round(avg_kcal_14)} kcal/day vs {tdee_now} TDEE — drop 100-200 kcal/day to hold weight.",
+                    "science": "Weight is regulated by long-term energy balance, not single days.",
+                    "data": {"avg_kcal": round(avg_kcal_14), "tdee": tdee_now, "diff": round(diff)},
+                    "suggestions": [],
+                })
+            elif diff < -100:
+                insights.append({
+                    "id": "maint_under",
+                    "type": "maintenance",
+                    "priority": 60,
+                    "severity": "info",
+                    "title": "Eating below maintenance",
+                    "message": f"You've averaged {round(avg_kcal_14)} kcal/day vs {tdee_now} TDEE — add 100-200 kcal/day if you intended to maintain.",
+                    "science": "Sustained underconsumption can drop NEAT and impact recovery (Trexler 2014).",
+                    "data": {"avg_kcal": round(avg_kcal_14), "tdee": tdee_now, "diff": round(diff)},
+                    "suggestions": [],
+                })
+
+    # Filter out snoozed and sort by priority
+    insights = [i for i in insights if i["id"] not in snoozed]
+    insights.sort(key=lambda x: x.get("priority", 0), reverse=True)
+    return {"insights": insights, "count": len(insights)}
+
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")
@@ -2625,6 +3049,7 @@ api_router.include_router(measurements_router)
 api_router.include_router(templates_router)
 api_router.include_router(scanner_router)
 api_router.include_router(programs_router)
+api_router.include_router(coach_router)
 app.include_router(api_router)
 
 # CORS middleware
