@@ -970,6 +970,40 @@ function ExerciseCard({
 }) {
   const [musclePri, setMusclePri] = useState<MuscleEntry[]>([]);
   const [muscleSec, setMuscleSec] = useState<MuscleEntry[]>([]);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  // Single-pulse animation when exercise is first added
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const tooltipOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Single gentle pulse — scale up then back to normal over 1 second
+    Animated.sequence([
+      Animated.timing(pulseScale, { toValue: 1.18, duration: 500, useNativeDriver: true }),
+      Animated.timing(pulseScale, { toValue: 1, duration: 500, useNativeDriver: true }),
+    ]).start();
+
+    // First-time tooltip — only ever shown once
+    (async () => {
+      try {
+        const seen = await Storage.getItem('seen_exercise_tooltip');
+        if (!seen) {
+          setShowTooltip(true);
+          Animated.sequence([
+            Animated.timing(tooltipOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+            Animated.delay(2700),
+            Animated.timing(tooltipOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+          ]).start(() => {
+            setShowTooltip(false);
+          });
+          await Storage.setItem('seen_exercise_tooltip', '1');
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -992,14 +1026,27 @@ function ExerciseCard({
   return (
     <View style={styles.exCard}>
       <View style={styles.exHeader}>
-        {/* Tiny muscle thumbnail */}
-        <TouchableOpacity onPress={onShowDetail} style={styles.muscleThumb} activeOpacity={0.7}>
-          {(musclePri.length > 0 || muscleSec.length > 0) ? (
-            <MuscleMap primary={musclePri} secondary={muscleSec} size="thumb" />
-          ) : (
-            <Ionicons name="body-outline" size={28} color={TEXT_MUTED} />
+        {/* Tiny muscle thumbnail with red play badge + one-time pulse */}
+        <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
+          <TouchableOpacity onPress={onShowDetail} style={styles.muscleThumb} activeOpacity={0.7}>
+            {(musclePri.length > 0 || muscleSec.length > 0) ? (
+              <MuscleMap primary={musclePri} secondary={muscleSec} size="thumb" />
+            ) : (
+              <Ionicons name="body-outline" size={28} color={TEXT_MUTED} />
+            )}
+            {/* Red play badge — signals tappable for video/guide */}
+            <View style={styles.playBadge}>
+              <Ionicons name="play" size={9} color="#fff" />
+            </View>
+          </TouchableOpacity>
+          {/* First-time tooltip */}
+          {showTooltip && (
+            <Animated.View style={[styles.tooltip, { opacity: tooltipOpacity }]} pointerEvents="none">
+              <View style={styles.tooltipArrow} />
+              <Text style={styles.tooltipText}>Tap for form guide and video</Text>
+            </Animated.View>
           )}
-        </TouchableOpacity>
+        </Animated.View>
         <TouchableOpacity onPress={onShowDetail} style={{ flex: 1 }} activeOpacity={0.7}>
           <View style={styles.exNameRow}>
             <Text style={styles.exName}>{exercise.exercise_name}</Text>
@@ -1647,7 +1694,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
     overflow: 'hidden',
+    position: 'relative',
   },
+  playBadge: {
+    position: 'absolute',
+    bottom: -3,
+    right: -3,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF0000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#1A1A1A',
+    paddingLeft: 1, // optical centering for play triangle
+  },
+  tooltip: {
+    position: 'absolute',
+    top: -42,
+    left: -22,
+    backgroundColor: '#000',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: ACCENT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 180,
+    zIndex: 50,
+    elevation: 6,
+  },
+  tooltipArrow: {
+    position: 'absolute',
+    bottom: -6,
+    left: 30,
+    width: 10,
+    height: 10,
+    backgroundColor: '#000',
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: ACCENT,
+    transform: [{ rotate: '45deg' }],
+  },
+  tooltipText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   setHeader: {
     flexDirection: 'row',
     alignItems: 'center',
