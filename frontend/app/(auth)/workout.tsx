@@ -1193,22 +1193,57 @@ function ExercisePickerModal({
     if (!visible) return;
     fetch(`${BACKEND_URL}/api/exercises/library`)
       .then((r) => r.json())
-      .then((d) => setGroups(Object.keys(d.library || {})))
+      .then((d) => {
+        setGroups(Object.keys(d.library || {}));
+        // Cache the full library — used as fallback if /search fails
+        const allExercises: { name: string; muscle_group: string }[] = [];
+        Object.entries(d.library || {}).forEach(([group, list]) => {
+          (list as string[]).forEach((name) => {
+            allExercises.push({ name, muscle_group: group });
+          });
+        });
+        // Use as initial results
+        if (allExercises.length > 0 && results.length === 0) {
+          setResults(allExercises);
+        }
+      })
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   useEffect(() => {
-    if (!visible || !sessionToken) return;
+    if (!visible) return;
     setLoading(true);
     const params = new URLSearchParams();
     if (query) params.append('q', query);
     if (muscleGroup) params.append('muscle_group', muscleGroup);
-    fetch(`${BACKEND_URL}/api/exercises/library/search?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${sessionToken}` },
-    })
-      .then((r) => r.json())
-      .then((d) => setResults(d.exercises || []))
-      .catch(() => setResults([]))
+    const url = `${BACKEND_URL}/api/exercises/library/search?${params.toString()}`;
+    const headers: Record<string, string> = {};
+    if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+    fetch(url, { headers })
+      .then(async (r) => {
+        if (!r.ok) {
+          // Fallback: filter cached library directly when /search fails (auth race, network, etc.)
+          const libRes = await fetch(`${BACKEND_URL}/api/exercises/library`);
+          const libJson = await libRes.json();
+          const all: { name: string; muscle_group: string }[] = [];
+          Object.entries(libJson.library || {}).forEach(([group, list]) => {
+            if (muscleGroup && group !== muscleGroup) return;
+            (list as string[]).forEach((name) => {
+              if (!query || name.toLowerCase().includes(query.toLowerCase())) {
+                all.push({ name, muscle_group: group });
+              }
+            });
+          });
+          setResults(all);
+          return;
+        }
+        const d = await r.json();
+        setResults(d.exercises || []);
+      })
+      .catch(() => {
+        // Network error → keep prior results to avoid empty state flicker
+      })
       .finally(() => setLoading(false));
   }, [query, muscleGroup, visible, sessionToken]);
 

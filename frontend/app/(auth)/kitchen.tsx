@@ -52,6 +52,7 @@ export default function KitchenScreen() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const apiHeaders = useCallback(
     () => ({
@@ -63,13 +64,23 @@ export default function KitchenScreen() {
 
   const load = useCallback(async () => {
     if (!sessionToken) return;
+    setLoadError(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/nutrition/dashboard`, {
         headers: apiHeaders(),
       });
-      if (res.ok) setData(await res.json());
-    } catch (e) {
-      console.log('load dashboard err', e);
+      if (res.ok) {
+        const json = await res.json();
+        setData(json);
+      } else {
+        const txt = await res.text().catch(() => '');
+        setLoadError(`HTTP ${res.status}: ${txt.slice(0, 100) || 'no body'}`);
+        console.warn('Kitchen dashboard load failed', res.status, txt);
+      }
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      setLoadError(msg);
+      console.warn('Kitchen dashboard fetch error', msg);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -108,7 +119,20 @@ export default function KitchenScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <Text style={{ color: '#fff' }}>Could not load dashboard</Text>
+          <Ionicons name="cloud-offline-outline" size={48} color={TEXT_MUTED} />
+          <Text style={[styles.errorTitle, { marginTop: 12 }]}>Could not load dashboard</Text>
+          {!!loadError && <Text style={styles.errorDetail}>{loadError}</Text>}
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              load();
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={16} color="#000" />
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -343,7 +367,20 @@ function ActionTile({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  errorTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  errorDetail: { color: TEXT_MUTED, fontSize: 12, marginTop: 6, textAlign: 'center' },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: ACCENT,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 18,
+  },
+  retryText: { color: '#000', fontSize: 14, fontWeight: '700' },
   scroll: { padding: 16, paddingBottom: 64 },
   headerRow: {
     flexDirection: 'row',
