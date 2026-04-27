@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useAuth } from './_layout';
+import { recommendSplit, getAllSplits, getDayName, DaysPerWeek, Goal } from '../src/data/splits';
 
 const ACCENT = '#F5A623';
 const CARD_BG = '#161618';
@@ -64,9 +65,11 @@ export default function OnboardingScreen() {
   const [weightKg, setWeightKg] = useState('');
   const [activity, setActivity] = useState<string | null>(null);
   const [goal, setGoal] = useState<string | null>(null);
+  const [daysPerWeek, setDaysPerWeek] = useState<2 | 3 | 4 | 5 | 6 | null>(null);
+  const [splitId, setSplitId] = useState<string | null>(null);
   const [sport, setSport] = useState<string | null>(null);
 
-  const totalSteps = 4;
+  const totalSteps = 5;
   const progress = useRef(new Animated.Value(0)).current;
 
   const animateProgress = (toStep: number) => {
@@ -89,7 +92,8 @@ export default function OnboardingScreen() {
     if (step === 0) return name.trim().length >= 1 && age && parseInt(age) > 0 && sex && heightCm && weightKg;
     if (step === 1) return !!activity;
     if (step === 2) return !!goal;
-    if (step === 3) return !!sport;
+    if (step === 3) return !!daysPerWeek && !!splitId;
+    if (step === 4) return !!sport;
     return false;
   };
 
@@ -150,6 +154,8 @@ export default function OnboardingScreen() {
           activity_level: activity,
           goal_type: goal,
           sport,
+          training_days_per_week: daysPerWeek,
+          split_id: splitId,
         }),
       });
       if (!res.ok) {
@@ -336,6 +342,86 @@ export default function OnboardingScreen() {
           )}
 
           {step === 3 && (
+            <View>
+              <Text style={styles.title}>How many days per week can you train?</Text>
+              <Text style={styles.subtitle}>
+                Pick what fits your schedule. We&apos;ll recommend the best research-backed split for your goal.
+              </Text>
+              <View style={styles.daysRow}>
+                {[2, 3, 4, 5, 6].map((d) => (
+                  <TouchableOpacity
+                    key={d}
+                    style={[styles.dayCard, daysPerWeek === d && styles.dayCardActive]}
+                    onPress={() => {
+                      setDaysPerWeek(d as DaysPerWeek);
+                      // auto-pick recommended split
+                      if (goal) {
+                        const rec = recommendSplit(d as DaysPerWeek, goal as Goal);
+                        setSplitId(rec.id);
+                      }
+                      haptic();
+                    }}
+                  >
+                    <Text style={[styles.dayCardNum, daysPerWeek === d && styles.dayCardNumActive]}>{d}</Text>
+                    <Text style={[styles.dayCardLabel, daysPerWeek === d && styles.dayCardLabelActive]}>days</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {daysPerWeek && goal && (() => {
+                const recommended = recommendSplit(daysPerWeek, goal as Goal);
+                const all = getAllSplits(daysPerWeek);
+                return (
+                  <View style={{ marginTop: 24 }}>
+                    <View style={styles.recBadgeRow}>
+                      <Ionicons name="sparkles" size={14} color={ACCENT} />
+                      <Text style={styles.recBadge}>RECOMMENDED FOR YOU</Text>
+                    </View>
+                    {all.map((s) => (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={[
+                          styles.splitCard,
+                          splitId === s.id && styles.splitCardActive,
+                          s.id === recommended.id && styles.splitCardRecommended,
+                        ]}
+                        onPress={() => { setSplitId(s.id); haptic(); }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={styles.splitName}>{s.name}</Text>
+                          {s.id === recommended.id && (
+                            <View style={styles.starPill}>
+                              <Ionicons name="star" size={10} color="#000" />
+                              <Text style={styles.starPillText}>BEST</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.splitReasoning}>{s.reasoning}</Text>
+                        <View style={styles.splitWeekRow}>
+                          {s.schedule.map((day, i) => (
+                            <View
+                              key={i}
+                              style={[
+                                styles.splitDayDot,
+                                day.is_rest ? styles.splitDayRest : styles.splitDayActive,
+                              ]}
+                            >
+                              <Text style={styles.splitDayDotText}>{getDayName(i).slice(0, 1)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                        <Text style={styles.splitScheduleHint}>
+                          Train: {s.schedule.filter(d => !d.is_rest).map(d => getDayName(d.day_of_week)).join(', ')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                );
+              })()}
+            </View>
+          )}
+
+          {step === 4 && (
             <View>
               <Text style={styles.title}>Pick your sport</Text>
               <Text style={styles.subtitle}>
@@ -534,6 +620,62 @@ const styles = StyleSheet.create({
   previewValue: { color: '#fff', fontSize: 20, fontWeight: '800' },
   previewLabel: { color: '#888', fontSize: 11, marginTop: 2 },
   previewMeta: { color: '#555', fontSize: 11, textAlign: 'center', marginTop: 6 },
+  // Days/Split picker styles
+  daysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 12,
+  },
+  dayCard: {
+    flex: 1,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  dayCardActive: { borderColor: ACCENT, backgroundColor: 'rgba(245,166,35,0.10)' },
+  dayCardNum: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  dayCardNumActive: { color: ACCENT },
+  dayCardLabel: { color: '#888', fontSize: 11, marginTop: 2, fontWeight: '600' },
+  dayCardLabelActive: { color: ACCENT },
+  recBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 },
+  recBadge: { color: ACCENT, fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  splitCard: {
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+  },
+  splitCardActive: { borderColor: ACCENT, backgroundColor: 'rgba(245,166,35,0.06)' },
+  splitCardRecommended: { borderColor: ACCENT },
+  splitName: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  splitReasoning: { color: '#aaa', fontSize: 12, marginTop: 6, lineHeight: 17 },
+  splitWeekRow: { flexDirection: 'row', gap: 4, marginTop: 10 },
+  splitDayDot: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  splitDayActive: { backgroundColor: ACCENT },
+  splitDayRest: { backgroundColor: '#333' },
+  splitDayDotText: { color: '#000', fontSize: 11, fontWeight: '800' },
+  splitScheduleHint: { color: ACCENT, fontSize: 11, marginTop: 8, fontWeight: '600' },
+  starPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: ACCENT,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  starPillText: { color: '#000', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   footer: {
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 16 : 24,

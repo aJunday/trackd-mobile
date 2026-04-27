@@ -22,6 +22,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../_layout';
 import MuscleMap, { MuscleEntry } from '../../src/components/MuscleMap';
+import ScienceBadge from '../../src/components/ScienceBadge';
+import { TEMPLATE_RESEARCH } from '../../src/data/research';
+import { Storage } from '../../src/utils/storage';
 
 const ACCENT = '#F5A623';
 const GOLD = '#F5A623';
@@ -60,8 +63,9 @@ interface ActiveWorkout {
 interface Template {
   template_id: string;
   name: string;
+  description?: string;
   is_preset?: boolean;
-  exercises: { exercise_name: string; sets: number }[];
+  exercises: { exercise_name: string; sets: number; reps?: string; rest_seconds?: number; cue?: string }[];
 }
 interface PR {
   pr_id: string;
@@ -133,6 +137,9 @@ export default function WorkoutScreen() {
     level?: string;
     week?: string;
     day?: string;
+    fromProgram?: string;
+    autoStart?: string;
+    splitTemplate?: string;
   }>();
 
   const [active, setActive] = useState<ActiveWorkout | null>(null);
@@ -151,7 +158,7 @@ export default function WorkoutScreen() {
 
   // Modals
   const [showExercisePicker, setShowExercisePicker] = useState(false);
-  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPlateCalc, setShowPlateCalc] = useState<{ open: boolean; weight: number }>({
     open: false,
     weight: 100,
@@ -198,69 +205,93 @@ export default function WorkoutScreen() {
     loadInitial();
   }, [sessionToken]);
 
-  // Handle pre-fill from Programs (URL params)
+  // Handle pre-fill from Programs (Storage payload — avoids URL length issues)
   useEffect(() => {
-    if (!sessionToken) return;
-    if (!params.exercises) return;
-    if (active) return; // don't override an already-running workout
-    try {
-      const parsed: { name: string; sets: number; reps: string; rest: string; cue?: string }[] =
-        JSON.parse(params.exercises as string);
-      const name = (params.name as string) || 'Program Workout';
-      const exercises: ExerciseEntry[] = parsed.map((p, i) => {
-        const setCount = Math.max(1, Number(p.sets) || 1);
-        return {
-          id: `e_${i}_${Date.now()}`,
-          exercise_name: p.name,
-          prev: null,
-          notes: p.cue || undefined,
-          sets: Array.from({ length: setCount }, (_, j) => ({
-            id: `s_pre_${i}_${j}_${Date.now()}`,
-            set_number: j + 1,
-            weight: 0,
-            reps: parseInt(String(p.reps).match(/\d+/)?.[0] || '0') || 0,
-            completed: false,
-          })),
-        };
-      });
-      // Persist to backend
-      fetch(`${BACKEND_URL}/api/workouts`, {
-        method: 'POST',
-        headers: apiHeaders(),
-        body: JSON.stringify({
-          name,
-          exercises: exercises.map((e) => ({
-            exercise_name: e.exercise_name,
-            sets: e.sets.map((s) => ({ ...s })),
-          })),
-          status: 'in_progress',
-        }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
+    if (!sessionToken || loading) return;
+    if (active) return;
+    if (params.fromProgram !== '1') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await Storage.getItem('pending_workout');
+        if (!raw) return;
+        await Storage.removeItem('pending_workout');
+        if (cancelled) return;
+        const payload = JSON.parse(raw);
+        const parsed = payload.exercises as { name: string; sets: number; reps: string; rest: string; cue?: string }[];
+        const name = payload.name || 'Program Workout';
+        const exercises: ExerciseEntry[] = parsed.map((p, i) => {
+          const setCount = Math.max(1, Number(p.sets) || 1);
+          return {
+            id: `e_${i}_${Date.now()}`,
+            exercise_name: p.name,
+            prev: null,
+            notes: p.cue || undefined,
+            sets: Array.from({ length: setCount }, (_, j) => ({
+              id: `s_pre_${i}_${j}_${Date.now()}`,
+              set_number: j + 1,
+              weight: 0,
+              reps: parseInt(String(p.reps).match(/\d+/)?.[0] || '0') || 0,
+              completed: false,
+            })),
+          };
+        });
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/workouts`, {
+            method: 'POST',
+            headers: apiHeaders(),
+            body: JSON.stringify({
+              name,
+              exercises: exercises.map((e) => ({
+                exercise_name: e.exercise_name,
+                sets: e.sets.map((s) => ({ ...s })),
+              })),
+              status: 'in_progress',
+            }),
+          });
+          const data = await res.json();
           setActive({
             workout_id: data.workout_id,
             name,
             start_time: Date.now(),
             exercises,
           });
-        })
-        .catch(() => {
+        } catch {
           setActive({ name, start_time: Date.now(), exercises });
-        });
-      if (params.program && params.week && params.day) {
-        setProgramContext({
-          program: String(params.program),
-          week: parseInt(String(params.week)),
-          day: parseInt(String(params.day)),
-        });
+        }
+        if (payload.program && payload.week && payload.day) {
+          setProgramContext({
+            program: String(payload.program),
+            week: payload.week,
+            day: payload.day,
+          });
+        }
+        router.setParams({ fromProgram: '' } as any);
+      } catch (e) {
+        console.log('prefill from storage err', e);
+        Alert.alert('Could not load program workout', 'Please try again from the Programs tab.');
       }
-      // Clear URL params so a reload doesn't re-trigger
-      router.setParams({ exercises: '' } as any);
-    } catch (e) {
-      console.log('prefill parse err', e);
+    })();
+    return () => { cancelled = true; };
+  }, [params.fromProgram, sessionToken, loading]);
+
+  // Handle autoStart from Dashboard "Start Workout" button
+  useEffect(() => {
+    if (!sessionToken || loading) return;
+    if (active) return;
+    if (params.autoStart !== '1') return;
+    const splitTpl = params.splitTemplate;
+    router.setParams({ autoStart: '', splitTemplate: '' } as any);
+    if (splitTpl && templates.presets.length > 0) {
+      const t = templates.presets.find((p) => p.template_id === splitTpl);
+      if (t) {
+        startFromTemplate(t);
+        return;
+      }
     }
-  }, [params.exercises, sessionToken]);
+    startEmptyWorkout();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.autoStart, params.splitTemplate, sessionToken, loading, active, templates.presets.length]);
 
   const loadInitial = async () => {
     setLoading(true);
@@ -387,8 +418,24 @@ export default function WorkoutScreen() {
     } catch {
       setActive({ name: tmpl.name, start_time: Date.now(), exercises });
     }
-    setShowTemplatesModal(false);
   };
+
+// Helper: summarize muscles targeted by a template by inspecting exercise names
+const summarizeMuscles = (t: Template): string => {
+  const lower = t.exercises.map((e) => e.exercise_name.toLowerCase()).join(' ');
+  const groups: string[] = [];
+  if (/bench|press|fly|chest|push.?up/.test(lower)) groups.push('chest');
+  if (/row|pull|lat|deadlift/.test(lower)) groups.push('back');
+  if (/shoulder|raise|press/.test(lower)) groups.push('shoulders');
+  if (/curl/.test(lower)) groups.push('biceps');
+  if (/tricep|extension|pushdown/.test(lower)) groups.push('triceps');
+  if (/squat|leg press|lunge|split squat|extension/.test(lower)) groups.push('quads');
+  if (/deadlift|leg curl|romanian|nordic/.test(lower)) groups.push('hamstrings');
+  if (/glute|hip thrust/.test(lower)) groups.push('glutes');
+  if (/calf/.test(lower)) groups.push('calves');
+  if (/face pull/.test(lower)) groups.push('rear delts');
+  return Array.from(new Set(groups)).slice(0, 4).join(' · ') || 'full body';
+};
 
   const finishWorkout = () => {
     if (!active) return;
@@ -637,6 +684,14 @@ export default function WorkoutScreen() {
 
   // ----------- Empty / lobby state -----------
   if (!active) {
+    const presetIds = [
+      'preset_push', 'preset_pull', 'preset_legs',
+      'preset_upper', 'preset_lower',
+      'preset_fullbody', 'preset_fullbody_b', 'preset_ppl',
+    ];
+    const orderedPresets = presetIds
+      .map((id) => templates.presets.find((p) => p.template_id === id))
+      .filter(Boolean) as Template[];
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll}>
@@ -648,25 +703,64 @@ export default function WorkoutScreen() {
             <Text style={styles.startBtnText}>Start Empty Workout</Text>
           </TouchableOpacity>
 
+          {/* Pre-Made Templates */}
           <View style={styles.sectionHeader}>
-            <Text style={styles.section}>Templates</Text>
-            <TouchableOpacity onPress={() => setShowTemplatesModal(true)}>
-              <Text style={styles.linkText}>See all</Text>
-            </TouchableOpacity>
+            <Text style={styles.section}>Pre-Made Templates</Text>
+            <Text style={styles.sectionSub}>{orderedPresets.length} science-backed</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 16 }}>
-            {templates.presets.slice(0, 7).map((t) => (
+          <View style={styles.templateGrid}>
+            {orderedPresets.map((t) => (
               <TouchableOpacity
                 key={t.template_id}
-                style={styles.tmplChip}
-                onPress={() => startFromTemplate(t)}
+                style={styles.templateCard}
+                activeOpacity={0.85}
+                onPress={() => setPreviewTemplate(t)}
               >
-                <MaterialCommunityIcons name="dumbbell" size={20} color={ACCENT} />
-                <Text style={styles.tmplName}>{t.name}</Text>
-                <Text style={styles.tmplMeta}>{t.exercises.length} exercises</Text>
+                <View style={styles.tplIconWrap}>
+                  <MaterialCommunityIcons name="dumbbell" size={22} color={ACCENT} />
+                </View>
+                <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
+                <Text style={styles.tplCardMeta}>
+                  {t.exercises.length} ex · ~{Math.round(t.exercises.length * 6 + 5)} min
+                </Text>
+                <Text style={styles.tplCardMuscles} numberOfLines={1}>
+                  {summarizeMuscles(t)}
+                </Text>
+                <View style={{ marginTop: 8 }}>
+                  <ScienceBadge refKeys={TEMPLATE_RESEARCH[t.template_id] || ['volume_schoenfeld_2017']} />
+                </View>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
+
+          {/* My Templates */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.section}>My Templates</Text>
+          </View>
+          {templates.user_templates.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <MaterialCommunityIcons name="bookmark-outline" size={28} color={TEXT_MUTED} />
+              <Text style={styles.emptyText}>No saved templates yet</Text>
+              <Text style={styles.emptySub}>Finish a workout and save it as a template.</Text>
+            </View>
+          ) : (
+            <View style={styles.templateGrid}>
+              {templates.user_templates.map((t) => (
+                <TouchableOpacity
+                  key={t.template_id}
+                  style={styles.templateCard}
+                  activeOpacity={0.85}
+                  onPress={() => setPreviewTemplate(t)}
+                >
+                  <View style={styles.tplIconWrap}>
+                    <Ionicons name="bookmark" size={20} color={ACCENT} />
+                  </View>
+                  <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
+                  <Text style={styles.tplCardMeta}>{t.exercises.length} ex</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <Text style={[styles.section, { marginTop: 24 }]}>Recent Workouts</Text>
           {recentWorkouts.length === 0 ? (
@@ -691,12 +785,14 @@ export default function WorkoutScreen() {
           )}
         </ScrollView>
 
-        {/* Templates modal */}
-        <TemplatesModal
-          visible={showTemplatesModal}
-          onClose={() => setShowTemplatesModal(false)}
-          templates={templates}
-          onSelect={startFromTemplate}
+        {/* Template preview modal */}
+        <TemplatePreviewModal
+          template={previewTemplate}
+          onClose={() => setPreviewTemplate(null)}
+          onStart={(tmpl) => {
+            setPreviewTemplate(null);
+            startFromTemplate(tmpl);
+          }}
         />
       </SafeAreaView>
     );
@@ -1115,64 +1211,89 @@ function ExercisePickerModal({
   );
 }
 
-// ============== TEMPLATES MODAL ==============
-function TemplatesModal({
-  visible,
+// ============== TEMPLATE PREVIEW MODAL ==============
+function TemplatePreviewModal({
+  template,
   onClose,
-  templates,
-  onSelect,
+  onStart,
 }: {
-  visible: boolean;
+  template: Template | null;
   onClose: () => void;
-  templates: { presets: Template[]; user_templates: Template[] };
-  onSelect: (t: Template) => void;
+  onStart: (t: Template) => void;
 }) {
   const insets = useSafeAreaInsets();
+  if (!template) return null;
+  const research = TEMPLATE_RESEARCH[template.template_id] || ['volume_schoenfeld_2017'];
+  const totalSets = template.exercises.reduce((sum, e) => sum + (e.sets || 0), 0);
+  const estMin = Math.round(template.exercises.length * 6 + 5);
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={!!template} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={[styles.modalContainer, { paddingTop: insets.top || 16 }]}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Templates</Text>
+          <Text style={styles.modalTitle}>{template.name}</Text>
           <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
             <Ionicons name="close" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-          <Text style={styles.section}>Pre-built</Text>
-          {templates.presets.map((t) => (
-            <TouchableOpacity key={t.template_id} style={styles.tmplCard} onPress={() => onSelect(t)}>
-              <MaterialCommunityIcons name="dumbbell" size={26} color={ACCENT} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.tmplCardName}>{t.name}</Text>
-                <Text style={styles.tmplCardMeta}>
-                  {t.exercises.map((e) => e.exercise_name).join(' · ')}
-                </Text>
-              </View>
-              <Ionicons name="play-circle" size={26} color={ACCENT} />
-            </TouchableOpacity>
-          ))}
-          {templates.user_templates.length > 0 && (
-            <>
-              <Text style={[styles.section, { marginTop: 24 }]}>Your Templates</Text>
-              {templates.user_templates.map((t) => (
-                <TouchableOpacity key={t.template_id} style={styles.tmplCard} onPress={() => onSelect(t)}>
-                  <MaterialCommunityIcons name="account" size={26} color={GOLD} />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.tmplCardName}>{t.name}</Text>
-                    <Text style={styles.tmplCardMeta}>
-                      {t.exercises.map((e) => e.exercise_name).join(' · ')}
-                    </Text>
-                  </View>
-                  <Ionicons name="play-circle" size={26} color={GOLD} />
-                </TouchableOpacity>
-              ))}
-            </>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+          {/* meta row */}
+          <View style={styles.tplPreviewMetaRow}>
+            <View style={styles.metaPill}>
+              <Ionicons name="barbell" size={14} color={ACCENT} />
+              <Text style={styles.metaPillText}>{template.exercises.length} exercises</Text>
+            </View>
+            <View style={styles.metaPill}>
+              <Ionicons name="repeat" size={14} color={ACCENT} />
+              <Text style={styles.metaPillText}>{totalSets} sets</Text>
+            </View>
+            <View style={styles.metaPill}>
+              <Ionicons name="time-outline" size={14} color={ACCENT} />
+              <Text style={styles.metaPillText}>~{estMin} min</Text>
+            </View>
+          </View>
+          <Text style={styles.tplMusclesLine}>Targets: {summarizeMuscles(template)}</Text>
+          {!!template.description && (
+            <Text style={styles.tplDesc}>{template.description}</Text>
           )}
+          <View style={{ marginTop: 8 }}>
+            <ScienceBadge refKeys={research} size="medium" />
+          </View>
+
+          {/* exercise list */}
+          <Text style={[styles.section, { marginTop: 18, marginBottom: 8 }]}>Exercises</Text>
+          {template.exercises.map((ex, i) => (
+            <View key={`${ex.exercise_name}_${i}`} style={styles.previewExRow}>
+              <View style={styles.previewExNum}>
+                <Text style={styles.previewExNumText}>{i + 1}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.previewExName}>{ex.exercise_name}</Text>
+                <Text style={styles.previewExMeta}>
+                  {ex.sets} sets
+                  {ex.reps ? ` · ${ex.reps} reps` : ''}
+                  {ex.rest_seconds ? ` · ${formatRestShort(ex.rest_seconds)} rest` : ''}
+                </Text>
+                {!!ex.cue && <Text style={styles.previewExCue}>{ex.cue}</Text>}
+              </View>
+            </View>
+          ))}
         </ScrollView>
+        <View style={styles.tplPreviewFooter}>
+          <TouchableOpacity
+            style={styles.startBtn}
+            onPress={() => onStart(template)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="play" size={20} color="#000" />
+            <Text style={styles.startBtnText}>Start Workout</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
 }
+
+const formatRestShort = (s: number) => (s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`);
 
 // ============== PLATE CALCULATOR MODAL ==============
 function PlateCalcModal({
@@ -1367,8 +1488,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    marginTop: 24,
   },
+  sectionSub: { color: TEXT_MUTED, fontSize: 11, fontWeight: '600' },
   linkText: { color: ACCENT, fontSize: 13, fontWeight: '600' },
+  templateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  templateCard: {
+    width: '48%',
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    minHeight: 142,
+  },
+  tplIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(245, 166, 35, 0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  tplCardName: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  tplCardMeta: { color: TEXT_MUTED, fontSize: 11, marginTop: 4, fontWeight: '500' },
+  tplCardMuscles: { color: ACCENT, fontSize: 11, marginTop: 4, fontWeight: '600', textTransform: 'capitalize' },
   tmplChip: {
     backgroundColor: CARD,
     borderWidth: 1,
@@ -1568,6 +1717,55 @@ const styles = StyleSheet.create({
   },
   tmplCardName: { color: '#fff', fontSize: 15, fontWeight: '700' },
   tmplCardMeta: { color: TEXT_MUTED, fontSize: 11, marginTop: 2 },
+  tplPreviewMetaRow: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  metaPillText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  tplMusclesLine: { color: ACCENT, fontSize: 12, marginTop: 4, fontWeight: '600', textTransform: 'capitalize' },
+  tplDesc: { color: TEXT_MUTED, fontSize: 13, marginTop: 8, lineHeight: 18 },
+  previewExRow: {
+    flexDirection: 'row',
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    alignItems: 'flex-start',
+  },
+  previewExNum: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 2,
+  },
+  previewExNumText: { color: '#000', fontSize: 12, fontWeight: '800' },
+  previewExName: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  previewExMeta: { color: TEXT_MUTED, fontSize: 12, marginTop: 3 },
+  previewExCue: { color: ACCENT, fontSize: 11, marginTop: 4, fontStyle: 'italic' },
+  tplPreviewFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: BG,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
   // Plate modal
   modalBackdrop: {
     flex: 1,

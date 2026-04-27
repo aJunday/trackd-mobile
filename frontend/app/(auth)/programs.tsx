@@ -18,6 +18,9 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { SPORTS, LEVEL_DESCRIPTIONS, Level, Sport, Program, DayPlan } from '../../src/data/programs';
 import { useAuth } from '../_layout';
+import { Storage } from '../../src/utils/storage';
+import ScienceBadge from '../../src/components/ScienceBadge';
+import { SPORT_PROGRAM_RESEARCH } from '../../src/data/research';
 
 const ACCENT = '#F5A623';
 const PR_ORANGE = '#FF6B35';
@@ -177,26 +180,31 @@ export default function ProgramsScreen() {
     if (!currentProgram?.active || currentProgram.active.sport_id !== sport.id || currentProgram.active.level !== program.level) {
       await startProgram(sport, program);
     }
-    // Pre-fill workout via URL params
-    const params = new URLSearchParams({
+    // Persist to Storage (avoids URL length / encoding errors on long programs)
+    const payload = {
+      name: `${sport.name} ${program.level} — W${week}D${dayIdx + 1}: ${dayPlan.focus}`,
       program: sport.id,
       level: program.level,
-      name: `${sport.name} ${program.level} — W${week}D${dayIdx + 1}: ${dayPlan.focus}`,
-      week: String(week),
-      day: String(dayIdx + 1),
-      exercises: JSON.stringify(
-        dayPlan.exercises.map((e) => ({
-          name: e.name,
-          sets: e.sets,
-          reps: e.reps,
-          rest: e.rest,
-          cue: e.cue || '',
-        }))
-      ),
-    });
+      week,
+      day: dayIdx + 1,
+      exercises: dayPlan.exercises.map((e) => ({
+        name: e.name,
+        sets: e.sets,
+        reps: e.reps,
+        rest: e.rest,
+        cue: e.cue || '',
+      })),
+    };
+    try {
+      await Storage.setItem('pending_workout', JSON.stringify(payload));
+    } catch (err) {
+      console.error('Storage write failed', err);
+      Alert.alert('Error', 'Could not stage workout. Please try again.');
+      return;
+    }
     setShowDetail(false);
     setTimeout(() => {
-      router.push(`/(auth)/workout?${params.toString()}` as any);
+      router.push('/(auth)/workout?fromProgram=1' as any);
     }, 150);
   };
 
@@ -480,6 +488,12 @@ function ProgramDetail({
               <Text style={styles.researchText}>Based on peer-reviewed research</Text>
             </View>
           )}
+          <View style={{ marginTop: 10, alignSelf: 'flex-start' }}>
+            <ScienceBadge
+              refKeys={SPORT_PROGRAM_RESEARCH[sport.id] || ['volume_schoenfeld_2017']}
+              size="medium"
+            />
+          </View>
         </View>
 
         {/* Calendar (only if active for this program) */}

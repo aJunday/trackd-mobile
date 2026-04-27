@@ -14,6 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../_layout';
+import { recommendSplit, getAllSplits, getDayName, getTodayWorkout, DaysPerWeek, Goal, SplitRecommendation } from '../../src/data/splits';
 
 const ACCENT = '#F5A623';
 const PR = '#FF6B35';
@@ -57,6 +58,23 @@ export default function Dashboard() {
   const [activeProgram, setActiveProgram] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Derive user's split from their saved profile (or recompute from days+goal)
+  const userSplit: SplitRecommendation | null = (() => {
+    const days = (user as any)?.training_days_per_week as DaysPerWeek | undefined;
+    const goal = (user as any)?.goal_type as Goal | undefined;
+    const splitId = (user as any)?.split_id as string | undefined;
+    if (!days || !goal) return null;
+    const all = getAllSplits(days);
+    const chosen = splitId ? all.find((s) => s.id === splitId) : null;
+    return chosen || recommendSplit(days, goal);
+  })();
+
+  const todayPlan = userSplit ? getTodayWorkout(userSplit) : null;
+  const todayDow = () => {
+    const js = new Date().getDay();
+    return js === 0 ? 6 : js - 1;
+  };
 
   const apiHeaders = useCallback(
     () => ({
@@ -120,7 +138,12 @@ export default function Dashboard() {
 
   const startWorkout = () => {
     haptic();
-    router.push('/(auth)/workout');
+    // If user has a split + today's plan is a real workout, pre-fill that template
+    if (todayPlan && !todayPlan.is_rest && todayPlan.template_id !== 'rest') {
+      router.push(`/(auth)/workout?autoStart=1&splitTemplate=${todayPlan.template_id}` as any);
+    } else {
+      router.push('/(auth)/workout?autoStart=1' as any);
+    }
   };
 
   const firstName = (user?.name || 'Athlete').split(' ')[0];
@@ -165,18 +188,57 @@ export default function Dashboard() {
           <View style={styles.heroContent}>
             <View style={{ flex: 1 }}>
               <Text style={styles.heroLabel}>READY TO TRAIN</Text>
-              <Text style={styles.heroTitle}>Start Workout</Text>
+              <Text style={styles.heroTitle}>{todayPlan && !todayPlan.is_rest ? todayPlan.template_name : 'Start Workout'}</Text>
               <Text style={styles.heroSub}>
                 {activeProgram?.active
                   ? `${activeProgram.active.sport_name} · W${activeProgram.current_week} D${activeProgram.current_day}`
-                  : 'Empty session or pick a template'}
+                  : todayPlan
+                    ? (todayPlan.is_rest ? 'Rest day · go for a walk' : `Today's plan from your split`)
+                    : 'Empty session or pick a template'}
               </Text>
             </View>
             <View style={styles.heroIconWrap}>
-              <Ionicons name="play" size={36} color="#000" />
+              <Ionicons name={todayPlan?.is_rest ? 'bed' : 'play'} size={36} color="#000" />
             </View>
           </View>
         </TouchableOpacity>
+
+        {/* Weekly split schedule */}
+        {userSplit && (
+          <>
+            <Text style={styles.section}>Your Week</Text>
+            <View style={styles.scheduleCard}>
+              <Text style={styles.scheduleSplitName}>{userSplit.name}</Text>
+              <View style={styles.scheduleRow}>
+                {userSplit.schedule.map((d, i) => {
+                  const isToday = i === todayDow();
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.scheduleDayCol,
+                        d.is_rest && styles.scheduleDayRest,
+                        !d.is_rest && styles.scheduleDayActive,
+                        isToday && styles.scheduleDayToday,
+                      ]}
+                    >
+                      <Text style={[styles.scheduleDayName, isToday && { color: '#000' }]}>
+                        {getDayName(i).slice(0, 3)}
+                      </Text>
+                      <Text style={[styles.scheduleDayPlan, isToday && { color: '#000' }]} numberOfLines={1}>
+                        {d.is_rest ? 'Rest' : d.template_name.slice(0, 4)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <TouchableOpacity onPress={() => router.push('/(auth)/profile' as any)} style={styles.scheduleEditBtn}>
+                <Ionicons name="pencil" size={12} color={ACCENT} />
+                <Text style={styles.scheduleEditText}>Change split</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
 
         {/* 3 weekly stat cards */}
         <Text style={styles.section}>This Week</Text>
@@ -348,6 +410,28 @@ const styles = StyleSheet.create({
   },
 
   section: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 24, marginBottom: 10, letterSpacing: 0.3 },
+  scheduleCard: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+  },
+  scheduleSplitName: { color: ACCENT, fontSize: 13, fontWeight: '700', marginBottom: 10, letterSpacing: 0.5 },
+  scheduleRow: { flexDirection: 'row', gap: 4 },
+  scheduleDayCol: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  scheduleDayActive: { backgroundColor: 'rgba(245,166,35,0.12)', borderWidth: 1, borderColor: 'rgba(245,166,35,0.3)' },
+  scheduleDayRest: { backgroundColor: '#1F1F22' },
+  scheduleDayToday: { backgroundColor: ACCENT, borderColor: ACCENT },
+  scheduleDayName: { color: TEXT_MUTED, fontSize: 10, fontWeight: '700' },
+  scheduleDayPlan: { color: '#fff', fontSize: 11, fontWeight: '600', marginTop: 2 },
+  scheduleEditBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 },
+  scheduleEditText: { color: ACCENT, fontSize: 12, fontWeight: '600' },
   statRow: { flexDirection: 'row', gap: 8 },
   statCard: {
     flex: 1,

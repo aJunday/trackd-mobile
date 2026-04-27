@@ -83,6 +83,8 @@ class OnboardingData(BaseModel):
     activity_level: str
     goal_type: str
     sport: Optional[str] = None
+    training_days_per_week: Optional[int] = None  # 2-6
+    split_id: Optional[str] = None  # e.g. 'upper_lower_4', 'ppl_3'
 
 class BodyMeasurement(BaseModel):
     measurement_id: str = Field(default_factory=lambda: f"bm_{uuid.uuid4().hex[:12]}")
@@ -666,6 +668,24 @@ async def update_user_goals(
     )
     
     return updated_user
+
+class SplitUpdateRequest(BaseModel):
+    training_days_per_week: Optional[int] = None
+    split_id: Optional[str] = None
+
+@user_router.put("/split")
+async def update_user_split(
+    req: SplitUpdateRequest,
+    user: User = Depends(get_current_user)
+):
+    """Update user's training schedule (days/week + chosen split)."""
+    update_data = {k: v for k, v in req.dict().items() if v is not None}
+    if update_data:
+        await db.users.update_one(
+            {"user_id": user.user_id},
+            {"$set": update_data}
+        )
+    return {"success": True, **update_data}
 
 @user_router.post("/calculate-tdee")
 async def calculate_user_tdee(
@@ -1854,6 +1874,8 @@ async def complete_onboarding(
         "activity_level": data.activity_level,
         "goal_type": data.goal_type,
         "sport": data.sport,
+        "training_days_per_week": data.training_days_per_week,
+        "split_id": data.split_id,
         "bmr": round(bmr),
         "tdee": round(tdee),
         "goal_calories": goal_calories,

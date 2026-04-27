@@ -347,7 +347,8 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "TRACKD User Training Split — PUT /api/users/split + onboarding fields"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -453,6 +454,21 @@ test_plan:
       - working: true
         agent: "testing"
         comment: "✅ Enhanced AI Chef Recipe API comprehensive testing completed successfully (14/14 validation checks passed). Created test user test-user-recipe-1775063605127 with 5 pantry items as specified in review request. ✅ Authentication: Correctly returns 401 for unauthenticated requests, accepts Bearer token authentication. ✅ Enhanced Response Structure: success=true, meals array with 2 detailed meal suggestions, each containing name (string), ingredients array with quantities, recipe array with step-by-step cooking instructions, cook_time in minutes (45 and 40 minutes), complete macros object (protein, carbs, fats, calories). ✅ Business Logic: remaining macros object correctly shows nutrition goals, pantry_items_used=5 (all items utilized). ✅ LLM Integration: GPT-4o generating realistic meal suggestions ('Grilled Chicken and Broccoli with Brown Rice' and 'Egg Fried Rice with Chicken and Broccoli') using all provided pantry items. All enhanced features working as designed."
+
+  - task: "TRACKD User Training Split — PUT /api/users/split + onboarding fields"
+    implemented: true
+    working: false
+    file: "backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added (1) optional fields training_days_per_week (int 2-6) and split_id (str e.g. 'upper_lower_4', 'ppl_3') to OnboardingData payload — POST /api/onboarding/complete now persists them on the user doc; (2) NEW endpoint PUT /api/users/split with body {training_days_per_week?, split_id?} that updates the user record. Auth required via Bearer."
+      - working: false
+        agent: "testing"
+        comment: "❌ TWO CRITICAL BUGS FOUND. PUT /api/users/split itself works (writes to DB correctly, returns 200 with success/echo) and auth gating is correct (401 without bearer). Verified DB after PUT has split_id='upper_lower_4', training_days_per_week=4. HOWEVER: ❌ BUG 1 — User Pydantic model (server.py lines 50-75) does NOT declare `training_days_per_week` or `split_id` fields. `get_current_user` does `User(**user_doc)`, which silently DROPS these unknown fields. Then GET /api/auth/me returns `user.dict()` which therefore NEVER contains them. Confirmed empirically: after PUT writes split_id='upper_lower_4' to DB, GET /auth/me returns 21 keys none of which are split_id or training_days_per_week. The frontend cannot read back the user's saved split via /auth/me — it's invisible at the API surface. Fix: add `training_days_per_week: Optional[int] = None` and `split_id: Optional[str] = None` to the User model. ❌ BUG 2 — POST /api/onboarding/complete (lines 1844-1891) unconditionally writes `training_days_per_week: data.training_days_per_week` and `split_id: data.split_id` to update_data, even when the request omits those fields (Optional[None] defaults). Calling /onboarding/complete WITHOUT the new fields therefore OVERWRITES previously-saved values back to None — i.e. backward-compat onboarding silently wipes a user's split. Confirmed empirically: PUT split_id='upper_lower_4' → DB has it → POST /onboarding/complete with payload omitting new fields → DB now has split_id=None. Fix: only include training_days_per_week / split_id in update_data when they are non-None (use `if v is not None` filter, similar to how /api/users/split is implemented). 4 of 7 split-feature assertions failed; the regression smoke checks (templates ≥7, exercises/details, coach/insights) all pass. Existing flows are not regressed."
 
   - task: "TRACKD AI Nutrition Coach Insights & Snooze"
     implemented: true
