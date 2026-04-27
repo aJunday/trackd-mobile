@@ -18,7 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../_layout';
 
 const ACCENT = '#F5A623';
@@ -124,8 +124,21 @@ export default function WorkoutScreen() {
   const { sessionToken } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    exercises?: string;
+    name?: string;
+    program?: string;
+    level?: string;
+    week?: string;
+    day?: string;
+  }>();
 
   const [active, setActive] = useState<ActiveWorkout | null>(null);
+  const [programContext, setProgramContext] = useState<{
+    program?: string;
+    week?: number;
+    day?: number;
+  } | null>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
   const [templates, setTemplates] = useState<{ presets: Template[]; user_templates: Template[] }>({
     presets: [],
@@ -182,6 +195,70 @@ export default function WorkoutScreen() {
     if (!sessionToken) return;
     loadInitial();
   }, [sessionToken]);
+
+  // Handle pre-fill from Programs (URL params)
+  useEffect(() => {
+    if (!sessionToken) return;
+    if (!params.exercises) return;
+    if (active) return; // don't override an already-running workout
+    try {
+      const parsed: { name: string; sets: number; reps: string; rest: string; cue?: string }[] =
+        JSON.parse(params.exercises as string);
+      const name = (params.name as string) || 'Program Workout';
+      const exercises: ExerciseEntry[] = parsed.map((p, i) => {
+        const setCount = Math.max(1, Number(p.sets) || 1);
+        return {
+          id: `e_${i}_${Date.now()}`,
+          exercise_name: p.name,
+          prev: null,
+          notes: p.cue || undefined,
+          sets: Array.from({ length: setCount }, (_, j) => ({
+            id: `s_pre_${i}_${j}_${Date.now()}`,
+            set_number: j + 1,
+            weight: 0,
+            reps: parseInt(String(p.reps).match(/\d+/)?.[0] || '0') || 0,
+            completed: false,
+          })),
+        };
+      });
+      // Persist to backend
+      fetch(`${BACKEND_URL}/api/workouts`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          name,
+          exercises: exercises.map((e) => ({
+            exercise_name: e.exercise_name,
+            sets: e.sets.map((s) => ({ ...s })),
+          })),
+          status: 'in_progress',
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          setActive({
+            workout_id: data.workout_id,
+            name,
+            start_time: Date.now(),
+            exercises,
+          });
+        })
+        .catch(() => {
+          setActive({ name, start_time: Date.now(), exercises });
+        });
+      if (params.program && params.week && params.day) {
+        setProgramContext({
+          program: String(params.program),
+          week: parseInt(String(params.week)),
+          day: parseInt(String(params.day)),
+        });
+      }
+      // Clear URL params so a reload doesn't re-trigger
+      router.setParams({ exercises: '' } as any);
+    } catch (e) {
+      console.log('prefill parse err', e);
+    }
+  }, [params.exercises, sessionToken]);
 
   const loadInitial = async () => {
     setLoading(true);
@@ -342,11 +419,27 @@ export default function WorkoutScreen() {
                 headers: apiHeaders(),
               });
             }
+            // Auto-mark program day complete if this workout was from a program
+            if (programContext?.week && programContext?.day) {
+              try {
+                await fetch(`${BACKEND_URL}/api/programs/complete-day`, {
+                  method: 'POST',
+                  headers: apiHeaders(),
+                  body: JSON.stringify({
+                    week: programContext.week,
+                    day: programContext.day,
+                  }),
+                });
+              } catch {
+                /* ignore */
+              }
+            }
           } catch (e) {
             console.log('finish err', e);
           }
           setActive(null);
           setRestTimer({ active: false, secs: 0, total: 0 });
+          setProgramContext(null);
           loadInitial();
         },
       },

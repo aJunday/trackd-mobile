@@ -21,7 +21,10 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "VIBRATE"]
+      "permissions": [
+        "CAMERA",
+        "VIBRATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -40,7 +43,8 @@
         }
       ],
       "expo-camera",
-      "expo-barcode-scanner"
+      "expo-barcode-scanner",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

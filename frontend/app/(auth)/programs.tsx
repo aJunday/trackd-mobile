@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  FlatList,
+  TextInput,
   Platform,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+import { SPORTS, LEVEL_DESCRIPTIONS, Level, Sport, Program, DayPlan } from '../../src/data/programs';
+import { useAuth } from '../_layout';
 
 const ACCENT = '#F5A623';
 const PR_ORANGE = '#FF6B35';
@@ -20,431 +25,330 @@ const BG = '#0D0D0F';
 const CARD = '#161618';
 const BORDER = '#222';
 const TEXT_MUTED = '#888';
+const SUCCESS = '#06D6A0';
 
-const haptic = () => {
-  if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+const haptic = (t: 'light' | 'success' = 'light') => {
+  if (Platform.OS === 'web') return;
+  if (t === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 };
 
-type Level = 'beginner' | 'intermediate' | 'advanced';
-
-interface DayPlan {
-  day: string;
-  focus: string;
-  exercises: { name: string; sets: number; reps: string; rest: string; cue?: string }[];
+interface CurrentProgramData {
+  active: any | null;
+  completed_count?: number;
+  total_days?: number;
+  completion_pct?: number;
+  current_week?: number;
+  current_day?: number;
 }
-interface Program {
-  level: Level;
-  duration_weeks: number;
-  days_per_week: number;
-  weekly: DayPlan[];
-}
-interface Sport {
-  id: string;
-  name: string;
-  icon: any; // Ionicons name
-  category: 'strength' | 'endurance' | 'team' | 'combat' | 'general';
-  blurb: string;
-  programs: Record<Level, Program>;
-}
-
-const REST_DAY: DayPlan = { day: 'Rest', focus: 'Recovery', exercises: [] };
-
-// Helper to make a basic program shell
-const makeProgram = (
-  level: Level,
-  weekly: DayPlan[],
-  weeks = 8
-): Program => ({
-  level,
-  duration_weeks: weeks,
-  days_per_week: weekly.filter((d) => d.exercises.length > 0).length,
-  weekly,
-});
-
-// ==== Detailed programs for primary sports ====
-const POWERLIFTING: Record<Level, Program> = {
-  beginner: makeProgram('beginner', [
-    {
-      day: 'Mon',
-      focus: 'Squat',
-      exercises: [
-        { name: 'Squat', sets: 3, reps: '5', rest: '3 min', cue: 'Drive knees out, brace core' },
-        { name: 'Bench Press', sets: 3, reps: '5', rest: '3 min', cue: 'Tuck elbows, leg drive' },
-        { name: 'Barbell Row', sets: 3, reps: '5', rest: '2 min' },
-      ],
-    },
-    REST_DAY,
-    {
-      day: 'Wed',
-      focus: 'Press',
-      exercises: [
-        { name: 'Squat', sets: 3, reps: '5', rest: '3 min' },
-        { name: 'Overhead Press', sets: 3, reps: '5', rest: '3 min', cue: 'Pack lats' },
-        { name: 'Deadlift', sets: 1, reps: '5', rest: '5 min', cue: 'Tight bar path' },
-      ],
-    },
-    REST_DAY,
-    {
-      day: 'Fri',
-      focus: 'Squat',
-      exercises: [
-        { name: 'Squat', sets: 3, reps: '5', rest: '3 min' },
-        { name: 'Bench Press', sets: 3, reps: '5', rest: '3 min' },
-        { name: 'Barbell Row', sets: 3, reps: '5', rest: '2 min' },
-      ],
-    },
-    REST_DAY,
-    REST_DAY,
-  ]),
-  intermediate: makeProgram('intermediate', [
-    {
-      day: 'Mon',
-      focus: 'Squat focus',
-      exercises: [
-        { name: 'Squat', sets: 5, reps: '3', rest: '4 min', cue: 'Pause at bottom' },
-        { name: 'Front Squat', sets: 3, reps: '6', rest: '3 min' },
-        { name: 'Romanian Deadlift', sets: 3, reps: '8', rest: '2 min' },
-        { name: 'Leg Curl', sets: 3, reps: '12', rest: '90s' },
-      ],
-    },
-    {
-      day: 'Tue',
-      focus: 'Bench focus',
-      exercises: [
-        { name: 'Bench Press', sets: 5, reps: '3', rest: '4 min' },
-        { name: 'Incline DB Press', sets: 4, reps: '8', rest: '2 min' },
-        { name: 'Tricep Pushdown', sets: 4, reps: '10', rest: '90s' },
-      ],
-    },
-    REST_DAY,
-    {
-      day: 'Thu',
-      focus: 'Deadlift focus',
-      exercises: [
-        { name: 'Deadlift', sets: 4, reps: '3', rest: '4 min', cue: 'Wedge into bar' },
-        { name: 'Pause Squat', sets: 3, reps: '5', rest: '3 min' },
-        { name: 'Barbell Row', sets: 4, reps: '6', rest: '2 min' },
-      ],
-    },
-    {
-      day: 'Fri',
-      focus: 'OHP + accessories',
-      exercises: [
-        { name: 'Overhead Press', sets: 5, reps: '5', rest: '3 min' },
-        { name: 'Close-Grip Bench', sets: 4, reps: '6', rest: '2 min' },
-        { name: 'Pull-up', sets: 4, reps: 'AMRAP', rest: '2 min' },
-      ],
-    },
-    REST_DAY,
-    REST_DAY,
-  ]),
-  advanced: makeProgram('advanced', [
-    {
-      day: 'Mon',
-      focus: 'Squat heavy',
-      exercises: [
-        { name: 'Squat', sets: 6, reps: '2-3', rest: '5 min', cue: 'RPE 8' },
-        { name: 'Pause Squat', sets: 4, reps: '4', rest: '3 min' },
-        { name: 'Good Morning', sets: 3, reps: '8', rest: '2 min' },
-      ],
-    },
-    {
-      day: 'Tue',
-      focus: 'Bench heavy',
-      exercises: [
-        { name: 'Bench Press', sets: 6, reps: '2-3', rest: '5 min' },
-        { name: 'Spoto Press', sets: 4, reps: '5', rest: '3 min' },
-        { name: 'JM Press', sets: 4, reps: '8', rest: '2 min' },
-      ],
-    },
-    {
-      day: 'Wed',
-      focus: 'Pull / accessory',
-      exercises: [
-        { name: 'Deficit Deadlift', sets: 4, reps: '3', rest: '4 min' },
-        { name: 'Barbell Row', sets: 4, reps: '5', rest: '2 min' },
-        { name: 'Lat Pulldown', sets: 4, reps: '10', rest: '90s' },
-      ],
-    },
-    REST_DAY,
-    {
-      day: 'Fri',
-      focus: 'Squat volume',
-      exercises: [
-        { name: 'Squat', sets: 5, reps: '5', rest: '3 min', cue: 'RPE 7' },
-        { name: 'Front Squat', sets: 4, reps: '6', rest: '3 min' },
-        { name: 'Leg Press', sets: 4, reps: '10', rest: '2 min' },
-      ],
-    },
-    {
-      day: 'Sat',
-      focus: 'Bench volume + DL',
-      exercises: [
-        { name: 'Bench Press', sets: 5, reps: '5', rest: '3 min' },
-        { name: 'Conventional Deadlift', sets: 4, reps: '4', rest: '4 min' },
-        { name: 'Tricep Extension', sets: 4, reps: '12', rest: '90s' },
-      ],
-    },
-    REST_DAY,
-  ], 12),
-};
-
-const RUNNING: Record<Level, Program> = {
-  beginner: makeProgram('beginner', [
-    { day: 'Mon', focus: 'Easy run', exercises: [{ name: 'Easy Run', sets: 1, reps: '20 min', rest: '—', cue: 'Conversational pace' }] },
-    REST_DAY,
-    { day: 'Wed', focus: 'Intervals', exercises: [{ name: 'Run/Walk Intervals', sets: 8, reps: '1 min run / 1 min walk', rest: '—' }] },
-    REST_DAY,
-    { day: 'Fri', focus: 'Easy run', exercises: [{ name: 'Easy Run', sets: 1, reps: '25 min', rest: '—' }] },
-    { day: 'Sat', focus: 'Long', exercises: [{ name: 'Long Run', sets: 1, reps: '30-40 min', rest: '—', cue: 'Build aerobic base' }] },
-    REST_DAY,
-  ]),
-  intermediate: makeProgram('intermediate', [
-    { day: 'Mon', focus: 'Easy', exercises: [{ name: 'Easy Run', sets: 1, reps: '45 min', rest: '—' }] },
-    { day: 'Tue', focus: 'Tempo', exercises: [{ name: 'Tempo Run', sets: 1, reps: '20 min @ threshold', rest: '—', cue: 'Comfortably hard' }] },
-    REST_DAY,
-    { day: 'Thu', focus: 'Intervals', exercises: [{ name: '400m Repeats', sets: 8, reps: '400m', rest: '90s jog' }] },
-    { day: 'Fri', focus: 'Easy', exercises: [{ name: 'Recovery Run', sets: 1, reps: '30 min', rest: '—' }] },
-    { day: 'Sat', focus: 'Long', exercises: [{ name: 'Long Run', sets: 1, reps: '60-75 min', rest: '—' }] },
-    REST_DAY,
-  ]),
-  advanced: makeProgram('advanced', [
-    { day: 'Mon', focus: 'Easy', exercises: [{ name: 'Easy Run', sets: 1, reps: '60 min', rest: '—' }] },
-    { day: 'Tue', focus: 'Threshold', exercises: [{ name: 'Threshold Run', sets: 1, reps: '4x8 min @ T-pace', rest: '90s jog' }] },
-    { day: 'Wed', focus: 'Easy + strides', exercises: [{ name: 'Easy + 6x100m strides', sets: 1, reps: '45 min', rest: '—' }] },
-    { day: 'Thu', focus: 'VO2', exercises: [{ name: '1km Repeats', sets: 5, reps: '1km @ 5k pace', rest: '3 min jog' }] },
-    REST_DAY,
-    { day: 'Sat', focus: 'Long', exercises: [{ name: 'Long Run + surges', sets: 1, reps: '90-110 min', rest: '—', cue: 'Last 20 min uptempo' }] },
-    { day: 'Sun', focus: 'Recovery', exercises: [{ name: 'Recovery Run', sets: 1, reps: '40 min', rest: '—' }] },
-  ], 12),
-};
-
-const BODYBUILDING: Record<Level, Program> = {
-  beginner: makeProgram('beginner', [
-    { day: 'Mon', focus: 'Full body A', exercises: [
-      { name: 'Squat', sets: 3, reps: '8-10', rest: '2 min' },
-      { name: 'Bench Press', sets: 3, reps: '8-10', rest: '2 min' },
-      { name: 'Lat Pulldown', sets: 3, reps: '10-12', rest: '90s' },
-    ]},
-    REST_DAY,
-    { day: 'Wed', focus: 'Full body B', exercises: [
-      { name: 'Romanian Deadlift', sets: 3, reps: '8-10', rest: '2 min' },
-      { name: 'Overhead Press', sets: 3, reps: '8-10', rest: '90s' },
-      { name: 'Seated Row', sets: 3, reps: '10-12', rest: '90s' },
-    ]},
-    REST_DAY,
-    { day: 'Fri', focus: 'Full body C', exercises: [
-      { name: 'Leg Press', sets: 3, reps: '10-12', rest: '90s' },
-      { name: 'Incline DB Press', sets: 3, reps: '10', rest: '90s' },
-      { name: 'Bicep Curl', sets: 3, reps: '12', rest: '60s' },
-    ]},
-    REST_DAY, REST_DAY,
-  ]),
-  intermediate: makeProgram('intermediate', [
-    { day: 'Mon', focus: 'Push', exercises: [
-      { name: 'Bench Press', sets: 4, reps: '6-8', rest: '2 min' },
-      { name: 'Incline DB Press', sets: 4, reps: '8-10', rest: '90s' },
-      { name: 'Lateral Raise', sets: 4, reps: '12-15', rest: '60s' },
-      { name: 'Tricep Pushdown', sets: 4, reps: '10-12', rest: '60s' },
-    ]},
-    { day: 'Tue', focus: 'Pull', exercises: [
-      { name: 'Deadlift', sets: 3, reps: '5', rest: '3 min' },
-      { name: 'Pull-up', sets: 4, reps: '8-10', rest: '2 min' },
-      { name: 'Barbell Row', sets: 4, reps: '8', rest: '90s' },
-      { name: 'Bicep Curl', sets: 4, reps: '10-12', rest: '60s' },
-    ]},
-    REST_DAY,
-    { day: 'Thu', focus: 'Legs', exercises: [
-      { name: 'Squat', sets: 4, reps: '6-8', rest: '3 min' },
-      { name: 'Romanian Deadlift', sets: 3, reps: '8', rest: '2 min' },
-      { name: 'Leg Press', sets: 3, reps: '12', rest: '2 min' },
-      { name: 'Calf Raise', sets: 4, reps: '15', rest: '60s' },
-    ]},
-    { day: 'Fri', focus: 'Push', exercises: [
-      { name: 'Overhead Press', sets: 4, reps: '6-8', rest: '2 min' },
-      { name: 'DB Bench', sets: 4, reps: '10', rest: '90s' },
-      { name: 'Cable Fly', sets: 3, reps: '12', rest: '60s' },
-    ]},
-    { day: 'Sat', focus: 'Pull', exercises: [
-      { name: 'Lat Pulldown', sets: 4, reps: '10', rest: '90s' },
-      { name: 'Seated Row', sets: 4, reps: '10', rest: '90s' },
-      { name: 'Face Pull', sets: 4, reps: '15', rest: '60s' },
-    ]},
-    REST_DAY,
-  ]),
-  advanced: makeProgram('advanced', [
-    { day: 'Mon', focus: 'Chest+Tri', exercises: [
-      { name: 'Bench Press', sets: 5, reps: '5-6', rest: '3 min' },
-      { name: 'Incline Bench', sets: 4, reps: '8', rest: '2 min' },
-      { name: 'Cable Fly', sets: 4, reps: '12', rest: '60s' },
-      { name: 'Skull Crusher', sets: 4, reps: '10', rest: '90s' },
-    ]},
-    { day: 'Tue', focus: 'Back+Bi', exercises: [
-      { name: 'Pull-up', sets: 5, reps: '6-8', rest: '2 min' },
-      { name: 'Barbell Row', sets: 4, reps: '8', rest: '90s' },
-      { name: 'T-Bar Row', sets: 4, reps: '10', rest: '90s' },
-      { name: 'Barbell Curl', sets: 4, reps: '8-10', rest: '90s' },
-    ]},
-    { day: 'Wed', focus: 'Legs', exercises: [
-      { name: 'Squat', sets: 5, reps: '5', rest: '3 min' },
-      { name: 'Romanian Deadlift', sets: 4, reps: '8', rest: '2 min' },
-      { name: 'Leg Press', sets: 4, reps: '12', rest: '2 min' },
-      { name: 'Leg Curl', sets: 4, reps: '12', rest: '90s' },
-    ]},
-    { day: 'Thu', focus: 'Shoulders', exercises: [
-      { name: 'OHP', sets: 5, reps: '5', rest: '2 min' },
-      { name: 'Lateral Raise', sets: 5, reps: '12-15', rest: '60s' },
-      { name: 'Rear Delt Fly', sets: 4, reps: '15', rest: '60s' },
-    ]},
-    { day: 'Fri', focus: 'Arms', exercises: [
-      { name: 'Close-Grip Bench', sets: 4, reps: '8', rest: '90s' },
-      { name: 'Bicep Curl', sets: 5, reps: '10', rest: '60s' },
-      { name: 'Hammer Curl', sets: 4, reps: '10', rest: '60s' },
-      { name: 'Tricep Pushdown', sets: 5, reps: '12', rest: '60s' },
-    ]},
-    { day: 'Sat', focus: 'Legs/glutes', exercises: [
-      { name: 'Front Squat', sets: 4, reps: '8', rest: '2 min' },
-      { name: 'Hip Thrust', sets: 4, reps: '10', rest: '2 min' },
-      { name: 'Lunges', sets: 3, reps: '12 each', rest: '90s' },
-    ]},
-    REST_DAY,
-  ], 12),
-};
-
-// Generic placeholder programs for the remaining sports
-const placeholderProgram = (sport: string, level: Level): Program => {
-  const reps = level === 'beginner' ? '10-12' : level === 'intermediate' ? '8-10' : '5-8';
-  const sets = level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 5;
-  return makeProgram(level, [
-    { day: 'Mon', focus: `${sport} skill`, exercises: [
-      { name: `${sport} Skill Drill`, sets, reps, rest: '90s' },
-      { name: 'Conditioning', sets: 1, reps: '15 min', rest: '—' },
-    ]},
-    { day: 'Tue', focus: 'Strength', exercises: [
-      { name: 'Squat', sets, reps, rest: '2 min' },
-      { name: 'Push-up', sets, reps: '15-20', rest: '90s' },
-    ]},
-    REST_DAY,
-    { day: 'Thu', focus: `${sport} practice`, exercises: [
-      { name: `${sport} Drill`, sets, reps, rest: '90s' },
-    ]},
-    { day: 'Fri', focus: 'Strength', exercises: [
-      { name: 'Deadlift', sets, reps, rest: '2 min' },
-      { name: 'Pull-up', sets, reps: '6-10', rest: '90s' },
-    ]},
-    { day: 'Sat', focus: 'Conditioning', exercises: [
-      { name: 'Sprint Intervals', sets: 6, reps: '30s on / 60s off', rest: '—' },
-    ]},
-    REST_DAY,
-  ]);
-};
-
-const SPORTS: Sport[] = [
-  { id: 'powerlifting', name: 'Powerlifting', icon: 'barbell-outline', category: 'strength', blurb: 'Build the big 3', programs: POWERLIFTING },
-  { id: 'bodybuilding', name: 'Bodybuilding', icon: 'body-outline', category: 'strength', blurb: 'Hypertrophy focused', programs: BODYBUILDING },
-  { id: 'running', name: 'Running', icon: 'walk-outline', category: 'endurance', blurb: '5K → marathon', programs: RUNNING },
-  { id: 'crossfit', name: 'CrossFit', icon: 'flash-outline', category: 'strength', blurb: 'Mixed modal fitness', programs: { beginner: placeholderProgram('CrossFit', 'beginner'), intermediate: placeholderProgram('CrossFit', 'intermediate'), advanced: placeholderProgram('CrossFit', 'advanced') } },
-  { id: 'cycling', name: 'Cycling', icon: 'bicycle-outline', category: 'endurance', blurb: 'Road & gravel', programs: { beginner: placeholderProgram('Cycling', 'beginner'), intermediate: placeholderProgram('Cycling', 'intermediate'), advanced: placeholderProgram('Cycling', 'advanced') } },
-  { id: 'swimming', name: 'Swimming', icon: 'water-outline', category: 'endurance', blurb: 'Pool & open water', programs: { beginner: placeholderProgram('Swimming', 'beginner'), intermediate: placeholderProgram('Swimming', 'intermediate'), advanced: placeholderProgram('Swimming', 'advanced') } },
-  { id: 'soccer', name: 'Soccer', icon: 'football-outline', category: 'team', blurb: 'Speed + agility', programs: { beginner: placeholderProgram('Soccer', 'beginner'), intermediate: placeholderProgram('Soccer', 'intermediate'), advanced: placeholderProgram('Soccer', 'advanced') } },
-  { id: 'basketball', name: 'Basketball', icon: 'basketball-outline', category: 'team', blurb: 'Vertical + skill', programs: { beginner: placeholderProgram('Basketball', 'beginner'), intermediate: placeholderProgram('Basketball', 'intermediate'), advanced: placeholderProgram('Basketball', 'advanced') } },
-  { id: 'tennis', name: 'Tennis', icon: 'tennisball-outline', category: 'team', blurb: 'Power & rotation', programs: { beginner: placeholderProgram('Tennis', 'beginner'), intermediate: placeholderProgram('Tennis', 'intermediate'), advanced: placeholderProgram('Tennis', 'advanced') } },
-  { id: 'boxing', name: 'Boxing', icon: 'fitness-outline', category: 'combat', blurb: 'Cardio & explosivity', programs: { beginner: placeholderProgram('Boxing', 'beginner'), intermediate: placeholderProgram('Boxing', 'intermediate'), advanced: placeholderProgram('Boxing', 'advanced') } },
-  { id: 'mma', name: 'MMA', icon: 'flame-outline', category: 'combat', blurb: 'Mixed disciplines', programs: { beginner: placeholderProgram('MMA', 'beginner'), intermediate: placeholderProgram('MMA', 'intermediate'), advanced: placeholderProgram('MMA', 'advanced') } },
-  { id: 'bjj', name: 'BJJ', icon: 'shield-outline', category: 'combat', blurb: 'Grappling fitness', programs: { beginner: placeholderProgram('BJJ', 'beginner'), intermediate: placeholderProgram('BJJ', 'intermediate'), advanced: placeholderProgram('BJJ', 'advanced') } },
-  { id: 'climbing', name: 'Climbing', icon: 'trending-up-outline', category: 'general', blurb: 'Bouldering & sport', programs: { beginner: placeholderProgram('Climbing', 'beginner'), intermediate: placeholderProgram('Climbing', 'intermediate'), advanced: placeholderProgram('Climbing', 'advanced') } },
-  { id: 'volleyball', name: 'Volleyball', icon: 'baseball-outline', category: 'team', blurb: 'Jump & power', programs: { beginner: placeholderProgram('Volleyball', 'beginner'), intermediate: placeholderProgram('Volleyball', 'intermediate'), advanced: placeholderProgram('Volleyball', 'advanced') } },
-  { id: 'golf', name: 'Golf', icon: 'golf-outline', category: 'general', blurb: 'Mobility & rotation', programs: { beginner: placeholderProgram('Golf', 'beginner'), intermediate: placeholderProgram('Golf', 'intermediate'), advanced: placeholderProgram('Golf', 'advanced') } },
-  { id: 'cricket', name: 'Cricket', icon: 'baseball-outline', category: 'team', blurb: 'Bat / bowl power', programs: { beginner: placeholderProgram('Cricket', 'beginner'), intermediate: placeholderProgram('Cricket', 'intermediate'), advanced: placeholderProgram('Cricket', 'advanced') } },
-  { id: 'rugby', name: 'Rugby', icon: 'football-outline', category: 'team', blurb: 'Strength & contact', programs: { beginner: placeholderProgram('Rugby', 'beginner'), intermediate: placeholderProgram('Rugby', 'intermediate'), advanced: placeholderProgram('Rugby', 'advanced') } },
-  { id: 'general', name: 'General Fitness', icon: 'pulse-outline', category: 'general', blurb: 'Health + longevity', programs: { beginner: placeholderProgram('General', 'beginner'), intermediate: placeholderProgram('General', 'intermediate'), advanced: placeholderProgram('General', 'advanced') } },
-];
-
-const CATEGORIES: { id: 'all' | Sport['category']; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'strength', label: 'Strength' },
-  { id: 'endurance', label: 'Endurance' },
-  { id: 'team', label: 'Team' },
-  { id: 'combat', label: 'Combat' },
-  { id: 'general', label: 'General' },
-];
 
 export default function ProgramsScreen() {
   const router = useRouter();
-  const [filter, setFilter] = useState<'all' | Sport['category']>('all');
+  const { sessionToken } = useAuth();
+
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Sport | null>(null);
   const [level, setLevel] = useState<Level>('beginner');
+  const [showLevelPicker, setShowLevelPicker] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
 
-  const sports = useMemo(
-    () => (filter === 'all' ? SPORTS : SPORTS.filter((s) => s.category === filter)),
-    [filter]
+  const [currentProgram, setCurrentProgram] = useState<CurrentProgramData | null>(null);
+  const [loadingCurrent, setLoadingCurrent] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const apiHeaders = useCallback(
+    () => ({
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionToken}`,
+    }),
+    [sessionToken]
   );
 
-  const startTodaysWorkout = (program: Program) => {
+  const loadCurrent = useCallback(async () => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/programs/current`, { headers: apiHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentProgram(data);
+      }
+    } catch (e) {
+      console.log('loadCurrent err', e);
+    } finally {
+      setLoadingCurrent(false);
+      setRefreshing(false);
+    }
+  }, [sessionToken, apiHeaders]);
+
+  useEffect(() => {
+    loadCurrent();
+  }, [loadCurrent]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return SPORTS;
+    return SPORTS.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.blurb.toLowerCase().includes(q) ||
+        s.category.toLowerCase().includes(q)
+    );
+  }, [search]);
+
+  const openSport = (sport: Sport) => {
     haptic();
-    // pick first day with exercises
-    const today = program.weekly.find((d) => d.exercises.length > 0);
-    if (!today) return;
-    // Pre-fill via URL (workout screen could read params, but for now just navigate)
-    router.push('/(auth)/workout');
+    setSelected(sport);
+    setLevel('beginner');
+    setShowLevelPicker(true);
+  };
+
+  const confirmLevel = (lvl: Level) => {
+    haptic('success');
+    setLevel(lvl);
+    setShowLevelPicker(false);
+    setShowDetail(true);
+  };
+
+  const startProgram = async (sport: Sport, program: Program) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/programs/start`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          sport_id: sport.id,
+          sport_name: sport.name,
+          level: program.level,
+          total_weeks: program.duration_weeks,
+          days_per_week: program.sessions_per_week,
+        }),
+      });
+      if (res.ok) {
+        haptic('success');
+        await loadCurrent();
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const restartProgram = async () => {
+    Alert.alert('Restart program?', 'Completed days will be cleared.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Restart',
+        style: 'destructive',
+        onPress: async () => {
+          await fetch(`${BACKEND_URL}/api/programs/restart`, {
+            method: 'POST',
+            headers: apiHeaders(),
+          });
+          loadCurrent();
+        },
+      },
+    ]);
+  };
+
+  const abandonProgram = async () => {
+    Alert.alert('Abandon program?', 'You can pick a new one anytime.', [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Abandon',
+        style: 'destructive',
+        onPress: async () => {
+          await fetch(`${BACKEND_URL}/api/programs/current`, {
+            method: 'DELETE',
+            headers: apiHeaders(),
+          });
+          loadCurrent();
+        },
+      },
+    ]);
+  };
+
+  const startDayWorkout = async (sport: Sport, program: Program, week: number, dayIdx: number, dayPlan: DayPlan) => {
+    haptic('success');
+    if (dayPlan.exercises.length === 0) {
+      Alert.alert('Rest Day', 'No exercises scheduled. Take a recovery day.');
+      return;
+    }
+    // Ensure the program is started (so complete-day works)
+    if (!currentProgram?.active || currentProgram.active.sport_id !== sport.id || currentProgram.active.level !== program.level) {
+      await startProgram(sport, program);
+    }
+    // Pre-fill workout via URL params
+    const params = new URLSearchParams({
+      program: sport.id,
+      level: program.level,
+      name: `${sport.name} ${program.level} — W${week}D${dayIdx + 1}: ${dayPlan.focus}`,
+      week: String(week),
+      day: String(dayIdx + 1),
+      exercises: JSON.stringify(
+        dayPlan.exercises.map((e) => ({
+          name: e.name,
+          sets: e.sets,
+          reps: e.reps,
+          rest: e.rest,
+          cue: e.cue || '',
+        }))
+      ),
+    });
+    setShowDetail(false);
+    setTimeout(() => {
+      router.push(`/(auth)/workout?${params.toString()}` as any);
+    }, 150);
+  };
+
+  const completeDayManual = async (week: number, day: number) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/programs/complete-day`, {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ week, day }),
+      });
+      haptic('success');
+      loadCurrent();
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-        <Text style={styles.h1}>Programs</Text>
-        <Text style={styles.h2}>18 sports · 3 levels each · weekly schedules</Text>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={
+          <RefreshControl
+            tintColor={ACCENT}
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadCurrent();
+            }}
+          />
+        }
+      >
+        <View style={{ padding: 16 }}>
+          <Text style={styles.h1}>Programs</Text>
+          <Text style={styles.h2}>18 sports · 3 levels · research-backed</Text>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 14 }}>
-          {CATEGORIES.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.catChip, filter === c.id && styles.catChipActive]}
-              onPress={() => {
-                haptic();
-                setFilter(c.id);
+          {/* Active program card */}
+          {!loadingCurrent && currentProgram?.active && (
+            <ActiveProgramCard
+              data={currentProgram}
+              onRestart={restartProgram}
+              onAbandon={abandonProgram}
+              onStartToday={() => {
+                const sport = SPORTS.find((s) => s.id === currentProgram.active.sport_id);
+                if (!sport) return;
+                const program = sport.programs[currentProgram.active.level as Level];
+                // Find the day for current_week/current_day
+                const w = currentProgram.current_week || 1;
+                const d = currentProgram.current_day || 1;
+                // day maps to Nth non-rest day? Actually we number days 1..days_per_week.
+                // Use the weekly plan's Nth non-rest day
+                const nonRest = program.weekly.filter((dd) => dd.exercises.length > 0);
+                const plan = nonRest[d - 1];
+                if (!plan) return;
+                startDayWorkout(sport, program, w, program.weekly.indexOf(plan), plan);
               }}
-            >
-              <Text style={[styles.catText, filter === c.id && styles.catTextActive]}>{c.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+            />
+          )}
 
-        <View style={styles.grid}>
-          {sports.map((s) => (
-            <TouchableOpacity
-              key={s.id}
-              style={styles.sportCard}
-              onPress={() => {
-                haptic();
-                setSelected(s);
-                setLevel('beginner');
-              }}
-            >
-              <View style={styles.sportIconWrap}>
-                <Ionicons name={s.icon} size={26} color={ACCENT} />
-              </View>
-              <Text style={styles.sportName}>{s.name}</Text>
-              <Text style={styles.sportBlurb}>{s.blurb}</Text>
-            </TouchableOpacity>
-          ))}
+          {/* Search */}
+          <View style={styles.searchWrap}>
+            <Ionicons name="search" size={18} color={TEXT_MUTED} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search a sport…"
+              placeholderTextColor={TEXT_MUTED}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {!!search && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Ionicons name="close-circle" size={18} color={TEXT_MUTED} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Sport grid */}
+          <View style={styles.grid}>
+            {filtered.map((s) => (
+              <TouchableOpacity key={s.id} style={styles.card} onPress={() => openSport(s)}>
+                <Text style={styles.emoji}>{s.emoji}</Text>
+                <Text style={styles.sportName}>{s.name}</Text>
+                <Text style={styles.sportBlurb}>{s.blurb}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {filtered.length === 0 && (
+            <Text style={styles.empty}>No sports match &quot;{search}&quot;.</Text>
+          )}
         </View>
       </ScrollView>
 
-      {/* Program detail modal */}
+      {/* Level picker */}
       <Modal
-        visible={!!selected}
+        visible={showLevelPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLevelPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={() => setShowLevelPicker(false)}
+        >
+          <View style={styles.levelModal}>
+            {selected && (
+              <>
+                <View style={styles.levelHeader}>
+                  <Text style={{ fontSize: 48 }}>{selected.emoji}</Text>
+                  <Text style={styles.levelSport}>{selected.name}</Text>
+                  <Text style={styles.levelSub}>Pick your level</Text>
+                </View>
+                {(['beginner', 'intermediate', 'advanced'] as Level[]).map((lvl) => (
+                  <TouchableOpacity
+                    key={lvl}
+                    style={styles.levelOption}
+                    onPress={() => confirmLevel(lvl)}
+                  >
+                    <Text style={styles.levelOptionName}>
+                      {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                    </Text>
+                    <Text style={styles.levelOptionDesc}>{LEVEL_DESCRIPTIONS[lvl]}</Text>
+                    <Text style={styles.levelMeta}>
+                      {selected.programs[lvl].duration_weeks}w ·{' '}
+                      {selected.programs[lvl].sessions_per_week}/wk
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Program detail */}
+      <Modal
+        visible={showDetail}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setSelected(null)}
+        onRequestClose={() => setShowDetail(false)}
       >
         {selected && (
           <ProgramDetail
             sport={selected}
-            level={level}
-            onChangeLevel={setLevel}
-            onClose={() => setSelected(null)}
-            onStart={(p) => startTodaysWorkout(p)}
+            program={selected.programs[level]}
+            currentProgram={currentProgram}
+            onClose={() => setShowDetail(false)}
+            onStartProgram={() => startProgram(selected, selected.programs[level])}
+            onStartDay={(w, dIdx, plan) =>
+              startDayWorkout(selected, selected.programs[level], w, dIdx, plan)
+            }
+            onMarkDayComplete={(w, d) => completeDayManual(w, d)}
           />
         )}
       </Modal>
@@ -452,122 +356,325 @@ export default function ProgramsScreen() {
   );
 }
 
-function ProgramDetail({
-  sport,
-  level,
-  onChangeLevel,
-  onClose,
-  onStart,
+// ============================================================
+// Active program card
+// ============================================================
+function ActiveProgramCard({
+  data,
+  onRestart,
+  onAbandon,
+  onStartToday,
 }: {
-  sport: Sport;
-  level: Level;
-  onChangeLevel: (l: Level) => void;
-  onClose: () => void;
-  onStart: (p: Program) => void;
+  data: CurrentProgramData;
+  onRestart: () => void;
+  onAbandon: () => void;
+  onStartToday: () => void;
 }) {
-  const insets = useSafeAreaInsets();
-  const program = sport.programs[level];
+  const sport = SPORTS.find((s) => s.id === data.active.sport_id);
+  const emoji = sport?.emoji || '💪';
   return (
-    <View style={[styles.detailContainer, { paddingTop: insets.top || 16 }]}>
-      <View style={styles.detailHeader}>
-        <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
-          <Ionicons name="close" size={22} color="#fff" />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 8 }}>
-          <Text style={styles.detailTitle}>{sport.name}</Text>
-          <Text style={styles.detailSub}>
-            {program.duration_weeks} weeks · {program.days_per_week} days/wk
+    <View style={styles.activeCard}>
+      <View style={styles.activeHead}>
+        <Text style={{ fontSize: 32 }}>{emoji}</Text>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={styles.activeName}>{data.active.sport_name}</Text>
+          <Text style={styles.activeLevel}>
+            {String(data.active.level).toUpperCase()} · Week {data.current_week} Day{' '}
+            {data.current_day}
+          </Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.pctNum}>{data.completion_pct ?? 0}%</Text>
+          <Text style={styles.pctMeta}>
+            {data.completed_count}/{data.total_days}
           </Text>
         </View>
       </View>
-
-      <View style={styles.levelRow}>
-        {(['beginner', 'intermediate', 'advanced'] as Level[]).map((l) => (
-          <TouchableOpacity
-            key={l}
-            style={[styles.levelChip, level === l && styles.levelChipActive]}
-            onPress={() => {
-              haptic();
-              onChangeLevel(l);
-            }}
-          >
-            <Text style={[styles.levelText, level === l && styles.levelTextActive]}>
-              {l.charAt(0).toUpperCase() + l.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.progressBar}>
+        <View
+          style={[
+            styles.progressFill,
+            { width: `${data.completion_pct ?? 0}%` },
+          ]}
+        />
       </View>
-
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {program.weekly.map((d, i) => (
-          <View key={i} style={styles.dayCard}>
-            <View style={styles.dayHeader}>
-              <Text style={styles.dayName}>{d.day}</Text>
-              <Text style={styles.dayFocus}>{d.focus}</Text>
-            </View>
-            {d.exercises.length === 0 ? (
-              <Text style={styles.restText}>—</Text>
-            ) : (
-              d.exercises.map((ex, j) => (
-                <View key={j} style={styles.exRow}>
-                  <Text style={styles.exName}>{ex.name}</Text>
-                  <Text style={styles.exMeta}>
-                    {ex.sets} × {ex.reps} · rest {ex.rest}
-                  </Text>
-                  {ex.cue && <Text style={styles.exCue}>💡 {ex.cue}</Text>}
-                </View>
-              ))
-            )}
-          </View>
-        ))}
-      </ScrollView>
-
-      <View style={[styles.startWrap, { paddingBottom: insets.bottom + 12 }]}>
-        <TouchableOpacity style={styles.startBtn} onPress={() => onStart(program)}>
-          <Ionicons name="play" size={22} color="#000" />
-          <Text style={styles.startText}>Start Today&apos;s Workout</Text>
+      <View style={styles.activeActions}>
+        <TouchableOpacity style={styles.activeBtn} onPress={onStartToday}>
+          <Ionicons name="play" size={16} color="#000" />
+          <Text style={styles.activeBtnText}>Start Today</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.activeBtnAlt, { marginLeft: 8 }]}
+          onPress={onRestart}
+        >
+          <Ionicons name="refresh" size={16} color={ACCENT} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.activeBtnAlt} onPress={onAbandon}>
+          <Ionicons name="close" size={16} color={PR_ORANGE} />
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
+// ============================================================
+// Program detail (weekly schedule + calendar)
+// ============================================================
+function ProgramDetail({
+  sport,
+  program,
+  currentProgram,
+  onClose,
+  onStartProgram,
+  onStartDay,
+  onMarkDayComplete,
+}: {
+  sport: Sport;
+  program: Program;
+  currentProgram: CurrentProgramData | null;
+  onClose: () => void;
+  onStartProgram: () => void;
+  onStartDay: (week: number, dayIdx: number, plan: DayPlan) => void;
+  onMarkDayComplete: (week: number, day: number) => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  const isActiveForThis =
+    currentProgram?.active?.sport_id === sport.id &&
+    currentProgram.active.level === program.level;
+  const completedDays: { week: number; day: number }[] = isActiveForThis
+    ? currentProgram?.active?.completed_days || []
+    : [];
+  const completedSet = new Set(completedDays.map((c: any) => `${c.week}_${c.day}`));
+
+  // non-rest days in weekly array (these are the trainable days, numbered 1..sessions_per_week)
+  const trainableDays = program.weekly
+    .map((d, i) => ({ ...d, originalIdx: i }))
+    .filter((d) => d.exercises.length > 0);
+
+  return (
+    <View style={[styles.detailContainer, { paddingTop: insets.top || 16 }]}>
+      {/* Header */}
+      <View style={styles.detailHeader}>
+        <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
+          <Ionicons name="close" size={22} color="#fff" />
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <Text style={styles.detailTitle}>
+            {sport.emoji} {sport.name}
+          </Text>
+          <Text style={styles.detailSub}>
+            {String(program.level).toUpperCase()} · {program.duration_weeks}w ·{' '}
+            {program.sessions_per_week}/wk
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
+        {/* Overview */}
+        <View style={styles.overviewCard}>
+          <Text style={styles.overviewGoal}>{program.goal}</Text>
+          {program.research_backed && (
+            <View style={styles.researchBadge}>
+              <Ionicons name="school" size={14} color={ACCENT} />
+              <Text style={styles.researchText}>Based on peer-reviewed research</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Calendar (only if active for this program) */}
+        {isActiveForThis && (
+          <>
+            <Text style={styles.sectionTitle}>Progress</Text>
+            <View style={styles.calendarWrap}>
+              {Array.from({ length: program.duration_weeks }).map((_, weekIdx) => {
+                const week = weekIdx + 1;
+                return (
+                  <View key={week} style={styles.calWeek}>
+                    <Text style={styles.calWeekLabel}>W{week}</Text>
+                    <View style={styles.calDays}>
+                      {Array.from({ length: program.sessions_per_week }).map((__, dayIdx) => {
+                        const d = dayIdx + 1;
+                        const done = completedSet.has(`${week}_${d}`);
+                        const isCurrent =
+                          currentProgram?.current_week === week &&
+                          currentProgram?.current_day === d;
+                        return (
+                          <TouchableOpacity
+                            key={d}
+                            style={[
+                              styles.calDay,
+                              done && styles.calDayDone,
+                              isCurrent && !done && styles.calDayCurrent,
+                            ]}
+                            onLongPress={() => onMarkDayComplete(week, d)}
+                          >
+                            {done ? (
+                              <Ionicons name="checkmark" size={12} color="#000" />
+                            ) : (
+                              <Text style={styles.calDayNum}>{d}</Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={styles.hint}>Long-press any day to manually mark complete.</Text>
+          </>
+        )}
+
+        {/* Weekly schedule */}
+        <Text style={styles.sectionTitle}>Weekly Schedule</Text>
+        {program.weekly.map((d, i) => {
+          const isRest = d.exercises.length === 0;
+          // trainable index
+          const trainIdx = trainableDays.findIndex((t) => t.originalIdx === i);
+          const dayNumber = trainIdx + 1;
+          return (
+            <View key={i} style={[styles.dayCard, isRest && styles.dayCardRest]}>
+              <View style={styles.dayHead}>
+                <View>
+                  <Text style={styles.dayName}>
+                    {d.day}
+                    {!isRest && (
+                      <Text style={styles.dayNumInline}> · Day {dayNumber}</Text>
+                    )}
+                  </Text>
+                  <Text style={styles.dayFocus}>{d.focus}</Text>
+                </View>
+                {!isRest && (
+                  <TouchableOpacity
+                    style={styles.startDayBtn}
+                    onPress={() => onStartDay(currentProgram?.current_week || 1, i, d)}
+                  >
+                    <Ionicons name="play" size={14} color="#000" />
+                    <Text style={styles.startDayText}>Start</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {d.exercises.map((ex, j) => (
+                <View key={j} style={styles.exRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.exName}>{ex.name}</Text>
+                    <Text style={styles.exMeta}>
+                      {ex.sets} × {ex.reps} · rest {ex.rest}
+                    </Text>
+                    {!!ex.cue && <Text style={styles.exCue}>💡 {ex.cue}</Text>}
+                  </View>
+                </View>
+              ))}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* Footer: Start Program (only shows if not yet started) */}
+      {!isActiveForThis && (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+          <TouchableOpacity style={styles.startBtn} onPress={onStartProgram}>
+            <Ionicons name="flag" size={20} color="#000" />
+            <Text style={styles.startBtnText}>Start This Program</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ============================================================
+// Styles
+// ============================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
   h1: { color: '#fff', fontSize: 30, fontWeight: '900' },
-  h2: { color: TEXT_MUTED, fontSize: 13, marginTop: 2 },
-  catChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
+  h2: { color: TEXT_MUTED, fontSize: 13, marginTop: 2, marginBottom: 14 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: CARD,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 10,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: BORDER,
-    marginRight: 8,
   },
-  catChipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  catText: { color: '#bbb', fontWeight: '700', fontSize: 12 },
-  catTextActive: { color: '#000' },
+  searchInput: { flex: 1, color: '#fff', fontSize: 15 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  sportCard: {
+  card: {
     width: '48%',
     backgroundColor: CARD,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: BORDER,
+    gap: 4,
   },
-  sportIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(245,166,35,0.10)',
+  emoji: { fontSize: 30, marginBottom: 4 },
+  sportName: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  sportBlurb: { color: TEXT_MUTED, fontSize: 11 },
+  empty: { color: TEXT_MUTED, textAlign: 'center', marginTop: 24 },
+
+  // Active program card
+  activeCard: {
+    backgroundColor: CARD,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: ACCENT,
+    marginBottom: 16,
+  },
+  activeHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  activeName: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  activeLevel: { color: ACCENT, fontSize: 11, fontWeight: '700', marginTop: 2, letterSpacing: 0.5 },
+  pctNum: { color: ACCENT, fontSize: 22, fontWeight: '900' },
+  pctMeta: { color: TEXT_MUTED, fontSize: 11 },
+  progressBar: { height: 8, backgroundColor: '#1F1F1F', borderRadius: 4, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: ACCENT, borderRadius: 4 },
+  activeActions: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+  activeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: ACCENT,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  activeBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
+  activeBtnAlt: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#1A1A1A',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginLeft: 8,
   },
-  sportName: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  sportBlurb: { color: TEXT_MUTED, fontSize: 11, marginTop: 2 },
+
+  // Level modal
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 16 },
+  levelModal: { backgroundColor: CARD, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 18 },
+  levelHeader: { alignItems: 'center', marginBottom: 14 },
+  levelSport: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 8 },
+  levelSub: { color: TEXT_MUTED, fontSize: 13, marginTop: 4 },
+  levelOption: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  levelOptionName: { color: ACCENT, fontWeight: '800', fontSize: 15, letterSpacing: 0.5 },
+  levelOptionDesc: { color: '#bbb', fontSize: 12, marginTop: 4, lineHeight: 18 },
+  levelMeta: { color: TEXT_MUTED, fontSize: 11, marginTop: 6, fontWeight: '700' },
+
   // Detail modal
   detailContainer: { flex: 1, backgroundColor: BG },
   detailHeader: {
@@ -580,20 +687,60 @@ const styles = StyleSheet.create({
   },
   iconBtn: { width: 38, height: 38, justifyContent: 'center', alignItems: 'center' },
   detailTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  detailSub: { color: TEXT_MUTED, fontSize: 12, marginTop: 2 },
-  levelRow: { flexDirection: 'row', padding: 12, gap: 6 },
-  levelChip: {
-    flex: 1,
-    paddingVertical: 10,
+  detailSub: { color: TEXT_MUTED, fontSize: 12, marginTop: 2, letterSpacing: 0.5 },
+  overviewCard: {
     backgroundColor: CARD,
-    borderRadius: 10,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
     borderColor: BORDER,
-    alignItems: 'center',
+    marginBottom: 16,
   },
-  levelChipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  levelText: { color: '#bbb', fontWeight: '700', fontSize: 13 },
-  levelTextActive: { color: '#000' },
+  overviewGoal: { color: '#fff', fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  researchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: 'rgba(245,166,35,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(245,166,35,0.3)',
+  },
+  researchText: { color: ACCENT, fontSize: 11, fontWeight: '700' },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 4, marginBottom: 10 },
+
+  // Calendar
+  calendarWrap: {
+    backgroundColor: CARD,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  calWeek: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  calWeekLabel: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', width: 30 },
+  calDays: { flexDirection: 'row', flex: 1, gap: 4 },
+  calDay: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  calDayNum: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700' },
+  calDayDone: { backgroundColor: SUCCESS, borderColor: SUCCESS },
+  calDayCurrent: { borderColor: ACCENT, borderWidth: 2 },
+  hint: { color: TEXT_MUTED, fontSize: 11, marginBottom: 16, fontStyle: 'italic' },
+
+  // Days
   dayCard: {
     backgroundColor: CARD,
     borderRadius: 14,
@@ -602,15 +749,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
   },
-  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  dayCardRest: { opacity: 0.5 },
+  dayHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
   dayName: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
-  dayFocus: { color: ACCENT, fontWeight: '700', fontSize: 12 },
-  restText: { color: TEXT_MUTED, textAlign: 'center', paddingVertical: 4 },
-  exRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: BORDER },
+  dayNumInline: { color: ACCENT, fontWeight: '700', fontSize: 12 },
+  dayFocus: { color: ACCENT, fontWeight: '700', fontSize: 12, marginTop: 2 },
+  startDayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: ACCENT,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  startDayText: { color: '#000', fontWeight: '800', fontSize: 12 },
+  exRow: { paddingVertical: 8, borderTopWidth: 1, borderTopColor: BORDER },
   exName: { color: '#fff', fontSize: 14, fontWeight: '700' },
   exMeta: { color: TEXT_MUTED, fontSize: 12, marginTop: 2 },
   exCue: { color: '#bbb', fontSize: 11, marginTop: 4, fontStyle: 'italic' },
-  startWrap: {
+
+  // Footer
+  footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: BORDER,
@@ -625,5 +789,5 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
   },
-  startText: { color: '#000', fontWeight: '900', fontSize: 16 },
+  startBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
 });

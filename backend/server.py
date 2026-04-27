@@ -35,6 +35,7 @@ onboarding_router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 measurements_router = APIRouter(prefix="/measurements", tags=["measurements"])
 templates_router = APIRouter(prefix="/templates", tags=["templates"])
 scanner_router = APIRouter(prefix="/scanner", tags=["scanner"])
+programs_router = APIRouter(prefix="/programs", tags=["programs"])
 
 # Configure logging
 logging.basicConfig(
@@ -2472,6 +2473,136 @@ async def log_water(
         })
         return {"ml": req.ml}
 
+# ==================== PROGRAMS / CALENDAR TRACKING ====================
+
+class StartProgramRequest(BaseModel):
+    sport_id: str
+    sport_name: str
+    level: str            # beginner | intermediate | advanced
+    total_weeks: int
+    days_per_week: int
+
+@programs_router.post("/start")
+async def start_program(req: StartProgramRequest, user: User = Depends(get_current_user)):
+    """Start (or restart) a training program. Archives any previous active program."""
+    now = datetime.now(timezone.utc)
+    # Archive existing active
+    await db.program_progress.update_many(
+        {"user_id": user.user_id, "status": "active"},
+        {"$set": {"status": "archived", "archived_at": now}}
+    )
+    doc = {
+        "progress_id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "sport_id": req.sport_id,
+        "sport_name": req.sport_name,
+        "level": req.level,
+        "total_weeks": req.total_weeks,
+        "days_per_week": req.days_per_week,
+        "started_at": now,
+        "status": "active",
+        "completed_days": [],  # list of {week, day, date}
+    }
+    await db.program_progress.insert_one(doc)
+    doc.pop("_id", None)
+    return {"success": True, "progress": doc}
+
+
+@programs_router.get("/current")
+async def current_program(user: User = Depends(get_current_user)):
+    """Get the user's current active program + calendar of completed days."""
+    doc = await db.program_progress.find_one(
+        {"user_id": user.user_id, "status": "active"},
+        {"_id": 0}
+    )
+    if not doc:
+        return {"active": None}
+
+    completed = doc.get("completed_days", [])
+    total_days = doc.get("total_weeks", 0) * doc.get("days_per_week", 0)
+    pct = round(100 * len(completed) / total_days) if total_days > 0 else 0
+
+    # Determine current week/day = next day to do
+    completed_set = {(c["week"], c["day"]) for c in completed}
+    current_week, current_day = 1, 1
+    for w in range(1, doc["total_weeks"] + 1):
+        for d in range(1, doc["days_per_week"] + 1):
+            if (w, d) not in completed_set:
+                current_week, current_day = w, d
+                break
+        else:
+            continue
+        break
+
+    return {
+        "active": doc,
+        "completed_count": len(completed),
+        "total_days": total_days,
+        "completion_pct": pct,
+        "current_week": current_week,
+        "current_day": current_day,
+    }
+
+
+class CompleteDayRequest(BaseModel):
+    week: int
+    day: int
+
+@programs_router.post("/complete-day")
+async def complete_day(req: CompleteDayRequest, user: User = Depends(get_current_user)):
+    """Mark a specific (week, day) as complete for the active program."""
+    doc = await db.program_progress.find_one({"user_id": user.user_id, "status": "active"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="No active program")
+    completed = doc.get("completed_days", [])
+    # idempotent
+    if any(c["week"] == req.week and c["day"] == req.day for c in completed):
+        return {"success": True, "already_done": True}
+    completed.append({
+        "week": req.week,
+        "day": req.day,
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    })
+    await db.program_progress.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"completed_days": completed, "last_session": datetime.now(timezone.utc)}}
+    )
+    return {"success": True, "completed_count": len(completed)}
+
+
+@programs_router.post("/restart")
+async def restart_program(user: User = Depends(get_current_user)):
+    """Reset completed days for the active program (same sport + level)."""
+    doc = await db.program_progress.find_one({"user_id": user.user_id, "status": "active"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="No active program")
+    await db.program_progress.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"completed_days": [], "restarted_at": datetime.now(timezone.utc)}}
+    )
+    return {"success": True}
+
+
+@programs_router.delete("/current")
+async def abandon_program(user: User = Depends(get_current_user)):
+    """Abandon the active program."""
+    res = await db.program_progress.update_many(
+        {"user_id": user.user_id, "status": "active"},
+        {"$set": {"status": "abandoned", "abandoned_at": datetime.now(timezone.utc)}}
+    )
+    return {"success": True, "modified": res.modified_count}
+
+
+@programs_router.get("/history")
+async def program_history(user: User = Depends(get_current_user)):
+    """Return all past programs (archived/abandoned)."""
+    docs = await db.program_progress.find(
+        {"user_id": user.user_id, "status": {"$ne": "active"}},
+        {"_id": 0}
+    ).sort("started_at", -1).limit(20).to_list(20)
+    return {"history": docs}
+
+
 # ==================== MAIN ROUTES ====================
 
 @api_router.get("/")
@@ -2493,6 +2624,7 @@ api_router.include_router(onboarding_router)
 api_router.include_router(measurements_router)
 api_router.include_router(templates_router)
 api_router.include_router(scanner_router)
+api_router.include_router(programs_router)
 app.include_router(api_router)
 
 # CORS middleware

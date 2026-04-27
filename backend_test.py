@@ -1,269 +1,216 @@
 """
-TRACKD pivot backend tests.
-Tests new endpoints: onboarding, measurements, exercise library, PRs, templates, plate calculator.
+Backend API tests for TRACKD Programs endpoints.
+Focus: /api/programs/* (start, current, complete-day, restart, delete, history)
 """
 import sys
 import requests
 
 BASE_URL = "https://fitness-command-7.preview.emergentagent.com/api"
-SESSION_TOKEN = "test_session_trackd_1777237904201"
-HEADERS = {"Authorization": f"Bearer {SESSION_TOKEN}", "Content-Type": "application/json"}
+TOKEN = "test_session_trackd_1777237904201"
+HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 
 passed = 0
 failed = 0
 failures = []
 
-
-def check(name: str, condition: bool, details: str = ""):
+def check(cond, msg):
     global passed, failed
-    if condition:
+    if cond:
         passed += 1
-        print(f"  PASS  {name}")
+        print(f"  PASS: {msg}")
     else:
         failed += 1
-        failures.append(f"{name} :: {details}")
-        print(f"  FAIL  {name}  -- {details}")
+        failures.append(msg)
+        print(f"  FAIL: {msg}")
 
 
-def section(title: str):
-    print(f"\n=== {title} ===")
+def section(title):
+    print(f"\n{'='*70}\n{title}\n{'='*70}")
 
 
-# ---------------- Onboarding ----------------
-section("1. Onboarding API")
+# ---- Cleanup first via API: abandon any existing active program ----
+section("Pre-cleanup: abandon any stale active program")
+r = requests.delete(f"{BASE_URL}/programs/current", headers=HEADERS)
+print(f"  DELETE /programs/current -> {r.status_code} {r.text[:160]}")
 
-r = requests.post(f"{BASE_URL}/onboarding/complete", json={
-    "name": "John", "age": 28, "biological_sex": "male",
-    "height_cm": 180, "weight_kg": 80,
-    "activity_level": "moderately_active", "goal_type": "build_muscle", "sport": "powerlifting"
-})
-check("POST /onboarding/complete without auth -> 401", r.status_code == 401, f"got {r.status_code}")
+# =========================================================
+section("1) POST /api/programs/start - Boxing beginner 8w x 3d")
+# =========================================================
+r_noauth = requests.post(f"{BASE_URL}/programs/start",
+                         json={"sport_id":"boxing","sport_name":"Boxing","level":"beginner",
+                               "total_weeks":8,"days_per_week":3})
+check(r_noauth.status_code == 401, f"Unauth POST /programs/start -> 401 (got {r_noauth.status_code})")
 
-r = requests.get(f"{BASE_URL}/onboarding/status")
-check("GET /onboarding/status without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-
-payload = {
-    "name": "John",
-    "age": 28,
-    "biological_sex": "male",
-    "height_cm": 180,
-    "weight_kg": 80,
-    "activity_level": "moderately_active",
-    "goal_type": "build_muscle",
-    "sport": "powerlifting"
-}
-r = requests.post(f"{BASE_URL}/onboarding/complete", json=payload, headers=HEADERS)
-check("POST /onboarding/complete returns 200", r.status_code == 200, f"got {r.status_code}: {r.text[:300]}")
-
+body = {"sport_id":"boxing","sport_name":"Boxing","level":"beginner",
+        "total_weeks":8,"days_per_week":3}
+r = requests.post(f"{BASE_URL}/programs/start", headers=HEADERS, json=body)
+print(f"  -> {r.status_code} {r.text[:300]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 if r.status_code == 200:
-    data = r.json()
-    check("response.success = True", data.get("success") is True, str(data.get("success")))
-    check("BMR == 1790", data.get("bmr") == 1790, f"got bmr={data.get('bmr')}")
-    check("TDEE rounded ~ 2774-2775", data.get("tdee") in (2774, 2775), f"got tdee={data.get('tdee')}")
-    check("goal_calories ~ 3024-3025 (tdee+250)", data.get("goal_calories") in (3024, 3025),
-          f"got={data.get('goal_calories')}")
-    macros = data.get("macros", {})
-    check("macros.protein == 160 (2g/kg)", macros.get("protein") == 160, f"got={macros.get('protein')}")
-    check("macros.carbs is int", isinstance(macros.get("carbs"), int), f"got={macros.get('carbs')}")
-    check("macros.fats is int", isinstance(macros.get("fats"), int), f"got={macros.get('fats')}")
+    d = r.json()
+    check(d.get("success") is True, "success=true")
+    p = d.get("progress", {})
+    check("progress_id" in p and bool(p["progress_id"]), "progress.progress_id present")
+    check(p.get("completed_days") == [], "progress.completed_days == []")
+    check(p.get("sport_id") == "boxing", "progress.sport_id == boxing")
+    check(p.get("level") == "beginner", "progress.level == beginner")
+    check(p.get("total_weeks") == 8, "progress.total_weeks == 8")
+    check(p.get("days_per_week") == 3, "progress.days_per_week == 3")
+    check(p.get("status") == "active", "progress.status == active")
 
-r = requests.get(f"{BASE_URL}/onboarding/status", headers=HEADERS)
-check("GET /onboarding/status returns 200", r.status_code == 200, f"got {r.status_code}")
+# =========================================================
+section("2) GET /api/programs/current - after starting Boxing")
+# =========================================================
+r_noauth = requests.get(f"{BASE_URL}/programs/current")
+check(r_noauth.status_code == 401, f"Unauth GET /programs/current -> 401 (got {r_noauth.status_code})")
+
+r = requests.get(f"{BASE_URL}/programs/current", headers=HEADERS)
+print(f"  -> {r.status_code} {r.text[:400]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 if r.status_code == 200:
-    check("onboarding_complete == True after onboarding",
-          r.json().get("onboarding_complete") is True, str(r.json()))
+    d = r.json()
+    active = d.get("active")
+    check(active is not None, "active is not None")
+    if active:
+        check(active.get("sport_id") == "boxing", "active.sport_id == boxing")
+    check(d.get("current_week") == 1, f"current_week == 1 (got {d.get('current_week')})")
+    check(d.get("current_day") == 1, f"current_day == 1 (got {d.get('current_day')})")
+    check(d.get("completion_pct") == 0, f"completion_pct == 0 (got {d.get('completion_pct')})")
+    check(d.get("total_days") == 24, f"total_days == 24 (got {d.get('total_days')})")
+    check(d.get("completed_count") == 0, f"completed_count == 0 (got {d.get('completed_count')})")
 
+# =========================================================
+section("3) POST /api/programs/complete-day - week=1, day=1 + idempotency")
+# =========================================================
+r_noauth = requests.post(f"{BASE_URL}/programs/complete-day", json={"week":1,"day":1})
+check(r_noauth.status_code == 401, f"Unauth POST /complete-day -> 401 (got {r_noauth.status_code})")
 
-# ---------------- Measurements ----------------
-section("2. Body Measurements API")
-
-r = requests.get(f"{BASE_URL}/measurements")
-check("GET /measurements without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-r = requests.post(f"{BASE_URL}/measurements", json={"weight_kg": 80})
-check("POST /measurements without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-r = requests.get(f"{BASE_URL}/measurements/weight")
-check("GET /measurements/weight without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-
-r = requests.get(f"{BASE_URL}/measurements", headers=HEADERS)
-check("GET /measurements returns 200", r.status_code == 200, f"got {r.status_code}: {r.text[:200]}")
+r = requests.post(f"{BASE_URL}/programs/complete-day", headers=HEADERS, json={"week":1,"day":1})
+print(f"  -> {r.status_code} {r.text[:240]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 if r.status_code == 200:
-    measurements = r.json().get("measurements", [])
-    check("measurements list non-empty (initial from onboarding)",
-          len(measurements) >= 1, f"got {len(measurements)}")
+    d = r.json()
+    check(d.get("success") is True, "success=true")
+    check(d.get("completed_count") == 1, f"completed_count == 1 (got {d.get('completed_count')})")
 
-r = requests.post(f"{BASE_URL}/measurements",
-                  json={"weight_kg": 79.5, "chest_cm": 105, "waist_cm": 85, "neck_cm": 40},
-                  headers=HEADERS)
-check("POST /measurements returns 200", r.status_code == 200, f"got {r.status_code}: {r.text[:300]}")
+r2 = requests.post(f"{BASE_URL}/programs/complete-day", headers=HEADERS, json={"week":1,"day":1})
+print(f"  idempotent -> {r2.status_code} {r2.text[:240]}")
+check(r2.status_code == 200, f"Idempotent status 200 (got {r2.status_code})")
+if r2.status_code == 200:
+    d2 = r2.json()
+    check(d2.get("success") is True, "idempotent: success=true")
+    check(d2.get("already_done") is True, "idempotent: already_done=true")
+
+r3 = requests.get(f"{BASE_URL}/programs/current", headers=HEADERS)
+print(f"  GET /current -> {r3.status_code} {r3.text[:300]}")
+if r3.status_code == 200:
+    d3 = r3.json()
+    check(d3.get("current_week") == 1, f"After complete: current_week == 1 (got {d3.get('current_week')})")
+    check(d3.get("current_day") == 2, f"After complete: current_day == 2 (got {d3.get('current_day')})")
+    pct = d3.get("completion_pct")
+    check(pct == 4, f"After complete: completion_pct approx 4 (got {pct})")
+    check(d3.get("completed_count") == 1, f"After complete: completed_count == 1 (got {d3.get('completed_count')})")
+    active = d3.get("active", {}) or {}
+    cdays = active.get("completed_days", [])
+    check(len(cdays) == 1 and cdays[0]["week"] == 1 and cdays[0]["day"] == 1,
+          f"active.completed_days contains (1,1); got {cdays}")
+
+# =========================================================
+section("4) POST /api/programs/restart")
+# =========================================================
+r = requests.post(f"{BASE_URL}/programs/restart", headers=HEADERS)
+print(f"  -> {r.status_code} {r.text[:200]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 if r.status_code == 200:
-    data = r.json()
-    check("new measurement weight_kg=79.5", data.get("weight_kg") == 79.5, str(data.get("weight_kg")))
-    check("new measurement chest_cm=105", data.get("chest_cm") == 105, str(data.get("chest_cm")))
-    check("new measurement waist_cm=85", data.get("waist_cm") == 85, str(data.get("waist_cm")))
-    check("measurement_id present", bool(data.get("measurement_id")), "missing")
+    check(r.json().get("success") is True, "restart: success=true")
 
-r = requests.get(f"{BASE_URL}/measurements/weight?days=30", headers=HEADERS)
-check("GET /measurements/weight returns 200", r.status_code == 200, f"got {r.status_code}: {r.text[:200]}")
+r = requests.get(f"{BASE_URL}/programs/current", headers=HEADERS)
 if r.status_code == 200:
-    weights = r.json().get("weights", [])
-    check("weights list non-empty after onboarding+measurement", len(weights) >= 1,
-          f"got {len(weights)}")
+    d = r.json()
+    active = d.get("active") or {}
+    check(active.get("completed_days") == [], f"After restart: completed_days == [] (got {active.get('completed_days')})")
+    check(d.get("completion_pct") == 0, f"After restart: completion_pct == 0 (got {d.get('completion_pct')})")
 
-
-# ---------------- Exercise Library ----------------
-section("3. Exercise Library API")
-
-r = requests.get(f"{BASE_URL}/exercises/library")
-check("GET /exercises/library returns 200", r.status_code == 200, f"got {r.status_code}")
+# =========================================================
+section("5) DELETE /api/programs/current (abandon Boxing)")
+# =========================================================
+r = requests.delete(f"{BASE_URL}/programs/current", headers=HEADERS)
+print(f"  -> {r.status_code} {r.text[:200]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 if r.status_code == 200:
-    data = r.json()
-    library = data.get("library", {})
-    check("library is grouped object with 'chest'",
-          isinstance(library, dict) and "chest" in library, f"keys={list(library.keys())}")
-    check("total_exercises is int > 0",
-          isinstance(data.get("total_exercises"), int) and data["total_exercises"] > 0,
-          str(data.get("total_exercises")))
+    d = r.json()
+    check(d.get("success") is True, "abandon: success=true")
+    check(d.get("modified") == 1, f"abandon: modified == 1 (got {d.get('modified')})")
 
-r = requests.get(f"{BASE_URL}/exercises/library/search?q=bench")
-check("GET /exercises/library/search without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-
-r = requests.get(f"{BASE_URL}/exercises/library/search?q=bench", headers=HEADERS)
-check("GET /exercises/library/search?q=bench returns 200", r.status_code == 200, f"got {r.status_code}")
+r = requests.get(f"{BASE_URL}/programs/current", headers=HEADERS)
 if r.status_code == 200:
-    exercises = r.json().get("exercises", [])
-    check("search 'bench' returns matches", len(exercises) > 0, f"got {len(exercises)}")
-    if exercises:
-        all_match = all("bench" in e["name"].lower() for e in exercises)
-        check("all results contain 'bench'", all_match, str([e["name"] for e in exercises[:3]]))
+    check(r.json().get("active") is None, f"After abandon: active == None (got {r.json().get('active')})")
 
-r = requests.get(f"{BASE_URL}/exercises/library/search?muscle_group=chest", headers=HEADERS)
-check("GET /exercises/library/search?muscle_group=chest returns 200",
-      r.status_code == 200, f"got {r.status_code}")
+# =========================================================
+section("6) GET /api/programs/history - should contain abandoned Boxing")
+# =========================================================
+r = requests.get(f"{BASE_URL}/programs/history", headers=HEADERS)
+print(f"  -> {r.status_code} {r.text[:400]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 if r.status_code == 200:
-    exercises = r.json().get("exercises", [])
-    check("muscle_group=chest returns chest exercises", len(exercises) > 0, f"got {len(exercises)}")
-    if exercises:
-        all_chest = all(e["muscle_group"] == "chest" for e in exercises)
-        check("all results have muscle_group=chest", all_chest,
-              str([(e["name"], e["muscle_group"]) for e in exercises[:3]]))
+    h = r.json().get("history", [])
+    check(isinstance(h, list), "history is array")
+    found_boxing = any(p.get("sport_id") == "boxing" and p.get("status") == "abandoned" for p in h)
+    check(found_boxing, f"history contains abandoned Boxing (entries: {[{'sport':p.get('sport_id'),'status':p.get('status')} for p in h]})")
 
+# =========================================================
+section("7) Start a new program (Powerlifting intermediate) after abandoning")
+# =========================================================
+body2 = {"sport_id":"powerlifting","sport_name":"Powerlifting","level":"intermediate",
+         "total_weeks":12,"days_per_week":4}
+r = requests.post(f"{BASE_URL}/programs/start", headers=HEADERS, json=body2)
+print(f"  start PL -> {r.status_code} {r.text[:240]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 
-# ---------------- Personal Records ----------------
-section("4. Personal Records API")
-
-r = requests.get(f"{BASE_URL}/exercises/prs")
-check("GET /exercises/prs without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-
-r = requests.get(f"{BASE_URL}/exercises/prs", headers=HEADERS)
-check("GET /exercises/prs returns 200", r.status_code == 200, f"got {r.status_code}")
+r = requests.get(f"{BASE_URL}/programs/current", headers=HEADERS)
 if r.status_code == 200:
-    data = r.json()
-    check("response has 'records' list",
-          isinstance(data.get("records"), list), str(type(data.get("records"))))
+    d = r.json()
+    active = d.get("active") or {}
+    check(active.get("sport_id") == "powerlifting", f"current reflects powerlifting (got {active.get('sport_id')})")
+    check(active.get("level") == "intermediate", "level == intermediate")
 
-r = requests.get(f"{BASE_URL}/exercises/prs/Bench%20Press")
-check("GET /exercises/prs/{name} without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-
-r = requests.get(f"{BASE_URL}/exercises/prs/Bench%20Press", headers=HEADERS)
-check("GET /exercises/prs/Bench Press returns 200", r.status_code == 200, f"got {r.status_code}")
+r = requests.get(f"{BASE_URL}/programs/history", headers=HEADERS)
 if r.status_code == 200:
-    data = r.json()
-    check("response has current_pr key", "current_pr" in data, str(list(data.keys())))
-    check("response has one_rm_history list",
-          "one_rm_history" in data and isinstance(data["one_rm_history"], list),
-          str(list(data.keys())))
+    h = r.json().get("history", [])
+    found_boxing = any(p.get("sport_id") == "boxing" for p in h)
+    check(found_boxing, "history still contains Boxing")
 
+body3 = {"sport_id":"cycling","sport_name":"Cycling","level":"advanced",
+         "total_weeks":10,"days_per_week":5}
+r = requests.post(f"{BASE_URL}/programs/start", headers=HEADERS, json=body3)
+print(f"  start Cycling -> {r.status_code} {r.text[:240]}")
+check(r.status_code == 200, f"Status 200 (got {r.status_code})")
 
-# ---------------- Templates ----------------
-section("5. Workout Templates API")
-
-r = requests.get(f"{BASE_URL}/templates")
-check("GET /templates without auth -> 401", r.status_code == 401, f"got {r.status_code}")
-
-r = requests.get(f"{BASE_URL}/templates", headers=HEADERS)
-check("GET /templates returns 200", r.status_code == 200, f"got {r.status_code}")
+r = requests.get(f"{BASE_URL}/programs/current", headers=HEADERS)
 if r.status_code == 200:
-    data = r.json()
-    presets = data.get("presets", [])
-    user_templates = data.get("user_templates", [])
-    check("presets has 7 items", len(presets) == 7, f"got {len(presets)}")
-    expected_names = {"Push Day", "Pull Day", "Leg Day", "Upper Body",
-                      "Lower Body", "Full Body", "PPL"}
-    actual_names = {p["name"] for p in presets}
-    check("presets contain all expected names",
-          expected_names == actual_names,
-          f"missing={expected_names - actual_names}, extra={actual_names - expected_names}")
-    check("user_templates is list", isinstance(user_templates, list), str(type(user_templates)))
+    d = r.json()
+    active = d.get("active") or {}
+    check(active.get("sport_id") == "cycling", f"current reflects cycling (got {active.get('sport_id')})")
 
-r = requests.post(f"{BASE_URL}/templates",
-                  json={"name": "My Custom",
-                        "exercises": [{"exercise_name": "Squat", "sets": 3}]},
-                  headers=HEADERS)
-check("POST /templates returns 200", r.status_code == 200, f"got {r.status_code}: {r.text[:300]}")
-created_template_id = None
+r = requests.get(f"{BASE_URL}/programs/history", headers=HEADERS)
 if r.status_code == 200:
-    data = r.json()
-    created_template_id = data.get("template_id")
-    check("created template has template_id", bool(created_template_id), str(data))
-    check("created template name=My Custom",
-          data.get("name") == "My Custom", str(data.get("name")))
+    h = r.json().get("history", [])
+    print(f"  history: {[{'sport':p.get('sport_id'),'status':p.get('status')} for p in h]}")
+    pl_entry = next((p for p in h if p.get("sport_id") == "powerlifting"), None)
+    check(pl_entry is not None, "Powerlifting appears in history")
+    if pl_entry:
+        check(pl_entry.get("status") == "archived",
+              f"Powerlifting status == archived (got {pl_entry.get('status')})")
+    box_entry = next((p for p in h if p.get("sport_id") == "boxing"), None)
+    check(box_entry is not None, "Boxing still in history")
 
-r = requests.delete(f"{BASE_URL}/templates/nonexistent_xyz_123", headers=HEADERS)
-check("DELETE /templates/nonexistent -> 404",
-      r.status_code == 404, f"got {r.status_code}: {r.text[:200]}")
+# cleanup
+section("Cleanup: abandon the Cycling program")
+requests.delete(f"{BASE_URL}/programs/current", headers=HEADERS)
 
-if created_template_id:
-    r = requests.delete(f"{BASE_URL}/templates/{created_template_id}", headers=HEADERS)
-    check("DELETE /templates/{id} returns 200",
-          r.status_code == 200, f"got {r.status_code}: {r.text[:200]}")
-
-
-# ---------------- Plate Calculator ----------------
-section("6. Plate Calculator API")
-
-r = requests.get(f"{BASE_URL}/exercises/plate-calculator?weight=100&unit=kg")
-check("GET /plate-calculator weight=100 kg returns 200", r.status_code == 200, f"got {r.status_code}")
-if r.status_code == 200:
-    data = r.json()
-    check("total_weight=100", data.get("total_weight") == 100, str(data.get("total_weight")))
-    check("barbell_weight=20", data.get("barbell_weight") == 20, str(data.get("barbell_weight")))
-    check("per_side=40", data.get("per_side") == 40, str(data.get("per_side")))
-    plates = data.get("plates_per_side", [])
-    plate_weights = [p["weight"] for p in plates]
-    check("plates_per_side weights = [25, 15]",
-          plate_weights == [25, 15], f"got {plate_weights}")
-
-r = requests.get(f"{BASE_URL}/exercises/plate-calculator?weight=20&unit=kg")
-check("GET /plate-calculator weight=20 kg returns 200", r.status_code == 200, f"got {r.status_code}")
-if r.status_code == 200:
-    data = r.json()
-    check("plates_per_side=[] for 20kg",
-          data.get("plates_per_side") == [], str(data.get("plates_per_side")))
-    check("per_side=0", data.get("per_side") == 0, str(data.get("per_side")))
-
-r = requests.get(f"{BASE_URL}/exercises/plate-calculator?weight=10&unit=kg")
-check("GET /plate-calculator weight=10 kg returns 200 with error key",
-      r.status_code == 200, f"got {r.status_code}")
-if r.status_code == 200:
-    data = r.json()
-    check("response contains error key for weight<barbell", "error" in data, str(data))
-
-r = requests.get(f"{BASE_URL}/exercises/plate-calculator?weight=135&unit=lbs")
-check("GET /plate-calculator weight=135 lbs returns 200", r.status_code == 200, f"got {r.status_code}")
-if r.status_code == 200:
-    data = r.json()
-    check("barbell_weight=45 (lbs)",
-          data.get("barbell_weight") == 45, str(data.get("barbell_weight")))
-    check("per_side=45 (lbs)", data.get("per_side") == 45, str(data.get("per_side")))
-    plates = data.get("plates_per_side", [])
-    plate_weights = [p["weight"] for p in plates]
-    check("plates=[45] for 135 lbs", plate_weights == [45], f"got {plate_weights}")
-
-
-# ---------------- Summary ----------------
-print("\n" + "=" * 60)
-print(f"PASSED: {passed}")
-print(f"FAILED: {failed}")
+print("\n" + "="*70)
+print(f"TOTAL:  passed={passed}  failed={failed}")
+print("="*70)
 if failures:
     print("\nFailures:")
     for f in failures:
