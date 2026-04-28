@@ -150,7 +150,11 @@ export default function HabitsSection() {
                   ]}
                   onPress={() => toggle(h.id)}
                   activeOpacity={0.7}
-                  hitSlop={8}
+                  hitSlop={12}
+                  testID={`habit-toggle-${h.id}`}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: doneToday }}
+                  accessibilityLabel={`${h.label} — ${doneToday ? 'done' : 'not done'}`}
                 >
                   {doneToday ? (
                     <Ionicons name="checkmark" size={22} color="#000" />
