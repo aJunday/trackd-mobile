@@ -93,15 +93,26 @@ export default function KitchenScreen() {
 
   const addWater = async (ml: number) => {
     haptic();
+    // Optimistic update so user sees feedback immediately
+    if (data) {
+      setData({ ...data, water_ml: (data.water_ml || 0) + ml });
+    }
     try {
-      await fetch(`${BACKEND_URL}/api/nutrition/water`, {
+      const res = await authFetch(`${BACKEND_URL}/api/nutrition/water`, {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ml }),
       });
+      if (!res.ok) {
+        // Roll back optimistic update on failure
+        if (data) {
+          setData({ ...data, water_ml: data.water_ml });
+        }
+      }
+      // Reload to sync with server total
       load();
     } catch {
-      /* ignore */
+      /* authFetch already handles 401; other errors are silent */
     }
   };
 

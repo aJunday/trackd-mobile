@@ -23,6 +23,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../_layout';
 import MuscleMap, { MuscleEntry } from '../../src/components/MuscleMap';
 import ScienceBadge from '../../src/components/ScienceBadge';
+import { authFetch } from '../../src/utils/authFetch';
 import { TEMPLATE_RESEARCH } from '../../src/data/research';
 import { Storage } from '../../src/utils/storage';
 
@@ -236,7 +237,7 @@ export default function WorkoutScreen() {
           };
         });
         try {
-          const res = await fetch(`${BACKEND_URL}/api/workouts`, {
+          const res = await authFetch(`${BACKEND_URL}/api/workouts`, {
             method: 'POST',
             headers: apiHeaders(),
             body: JSON.stringify({
@@ -325,8 +326,8 @@ export default function WorkoutScreen() {
     setLoading(true);
     try {
       const [recRes, tmplRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/workouts`, { headers: apiHeaders() }),
-        fetch(`${BACKEND_URL}/api/templates`, { headers: apiHeaders() }),
+        authFetch(`${BACKEND_URL}/api/workouts`, { headers: apiHeaders() }),
+        authFetch(`${BACKEND_URL}/api/templates`, { headers: apiHeaders() }),
       ]);
       if (recRes.ok) {
         const all = await recRes.json();
@@ -372,7 +373,7 @@ export default function WorkoutScreen() {
     haptic('medium');
     const name = `Workout ${new Date().toLocaleDateString(undefined, { weekday: 'short' })}`;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/workouts`, {
+      const res = await authFetch(`${BACKEND_URL}/api/workouts`, {
         method: 'POST',
         headers: apiHeaders(),
         body: JSON.stringify({ name, exercises: [], status: 'in_progress' }),
@@ -421,7 +422,7 @@ export default function WorkoutScreen() {
         // Fetch previous best for each exercise
         let prev = null;
         try {
-          const r = await fetch(
+          const r = await authFetch(
             `${BACKEND_URL}/api/exercises/history/${encodeURIComponent(te.exercise_name)}`,
             { headers: apiHeaders() }
           );
@@ -448,7 +449,7 @@ export default function WorkoutScreen() {
       })
     );
     try {
-      const res = await fetch(`${BACKEND_URL}/api/workouts`, {
+      const res = await authFetch(`${BACKEND_URL}/api/workouts`, {
         method: 'POST',
         headers: apiHeaders(),
         body: JSON.stringify({
@@ -483,7 +484,7 @@ export default function WorkoutScreen() {
           haptic('success');
           try {
             if (active.workout_id) {
-              await fetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
+              await authFetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
                 method: 'PUT',
                 headers: apiHeaders(),
                 body: JSON.stringify({
@@ -498,7 +499,7 @@ export default function WorkoutScreen() {
                   })),
                 }),
               });
-              await fetch(`${BACKEND_URL}/api/workouts/${active.workout_id}/complete`, {
+              await authFetch(`${BACKEND_URL}/api/workouts/${active.workout_id}/complete`, {
                 method: 'POST',
                 headers: apiHeaders(),
               });
@@ -506,7 +507,7 @@ export default function WorkoutScreen() {
             // Auto-mark program day complete if this workout was from a program
             if (programContext?.week && programContext?.day) {
               try {
-                await fetch(`${BACKEND_URL}/api/programs/complete-day`, {
+                await authFetch(`${BACKEND_URL}/api/programs/complete-day`, {
                   method: 'POST',
                   headers: apiHeaders(),
                   body: JSON.stringify({
@@ -539,7 +540,7 @@ export default function WorkoutScreen() {
         onPress: async () => {
           if (active?.workout_id) {
             try {
-              await fetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
+              await authFetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
                 method: 'DELETE',
                 headers: apiHeaders(),
               });
@@ -558,7 +559,7 @@ export default function WorkoutScreen() {
     if (!active) return;
     let prev = null;
     try {
-      const r = await fetch(
+      const r = await authFetch(
         `${BACKEND_URL}/api/exercises/history/${encodeURIComponent(name)}`,
         { headers: apiHeaders() }
       );
@@ -666,7 +667,7 @@ export default function WorkoutScreen() {
       // Check PR
       const oneRm = epley(set.weight, set.reps);
       try {
-        const prRes = await fetch(
+        const prRes = await authFetch(
           `${BACKEND_URL}/api/exercises/prs/${encodeURIComponent(ex.exercise_name)}`,
           { headers: apiHeaders() }
         );
@@ -1009,7 +1010,7 @@ function ExerciseCard({
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
+        const r = await authFetch(
           `${BACKEND_URL}/api/exercises/muscles-thumbnail?name=${encodeURIComponent(exercise.exercise_name)}`
         );
         const j = await r.json();
@@ -1191,7 +1192,7 @@ function ExercisePickerModal({
 
   useEffect(() => {
     if (!visible) return;
-    fetch(`${BACKEND_URL}/api/exercises/library`)
+    authFetch(`${BACKEND_URL}/api/exercises/library`)
       .then((r) => r.json())
       .then((d) => {
         setGroups(Object.keys(d.library || {}));
@@ -1218,13 +1219,11 @@ function ExercisePickerModal({
     if (query) params.append('q', query);
     if (muscleGroup) params.append('muscle_group', muscleGroup);
     const url = `${BACKEND_URL}/api/exercises/library/search?${params.toString()}`;
-    const headers: Record<string, string> = {};
-    if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-    fetch(url, { headers })
+    authFetch(url)
       .then(async (r) => {
         if (!r.ok) {
           // Fallback: filter cached library directly when /search fails (auth race, network, etc.)
-          const libRes = await fetch(`${BACKEND_URL}/api/exercises/library`);
+          const libRes = await authFetch(`${BACKEND_URL}/api/exercises/library`);
           const libJson = await libRes.json();
           const all: { name: string; muscle_group: string }[] = [];
           Object.entries(libJson.library || {}).forEach(([group, list]) => {
