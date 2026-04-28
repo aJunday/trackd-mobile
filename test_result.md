@@ -348,13 +348,27 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Indian Food Database screen (frontend UI)"
-    - "ScienceBadge modals (barcode + Indian food results)"
-    - "Weight Log section on Profile"
-    - "Habits section on Dashboard"
+    - "Packaged-product detection UI in meal scanner"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+frontend_packaged_ui:
+  - task: "Packaged-product detection UI (3-tab scanner + advisory banner + USDA badge + unmatched CTAs)"
+    implemented: true
+    working: true
+    file: "frontend/app/(auth)/meal-scanner.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TASK A FULLY VERIFIED via Playwright (390x844, localhost:3000, session token injected). Mode bar contains EXACTLY 3 tabs: Photo / Barcode / Label. NO 'Indian' tab anywhere (count=0). All three tabs switch correctly: Photo → 'Snap or pick a meal photo' empty state visible; Barcode → input placeholder '0070470496528' + 'Look up' button visible; Label → 'Point at a Nutrition Facts label' empty state visible. Screenshots captured for each. ⚠️ TASKS B & C — CODE-VERIFIED ONLY (per spec fallback). Could not trigger fetch-mock + scan-result render in headless because expo-image-picker on web does not expose a queryable input[type=file] before user clicks Gallery (file_inputs count=0). Per the testing instructions this is the documented fallback path. Code review of /app/frontend/app/(auth)/meal-scanner.tsx confirms full implementation: (1) packagedBanner (lines 795-809) renders when scanResult.has_packaged is true with text 'For exact values scan the barcode or nutrition label.' (or matched-only variant). (2) USDA source badge (lines 893-901) renders for items with is_packaged && db_matched: shield-check icon + green SUCCESS color + source_label text. (3) Brand suffix on item title (lines 866-868): item.brand rendered as ' · {brand}' in muted color after item.name. (4) unmatchedBox (lines 904-938) renders for is_packaged && !db_matched: warning title 'Estimated values — not in our database' + subtitle 'Scan the barcode or nutrition label for exact values.' + two CTAs 'Scan Barcode' (filled gold via styles.unmatchedBtn) and 'Scan Label' (outlined dark via unmatchedBtnSecondary). (5) Both CTAs correctly call setMode('barcode')/setMode('label') (lines 920, 930) which switches the mode bar. Mock fetch interception code path is wired correctly (runScan uses authFetch which delegates to window.fetch). RECOMMEND: main agent verify B/C manually in a real device or add a testID-tagged dev-only 'Inject mock scan' button for future automation. No regressions."
+
+agent_communication:
+  - agent: "testing"
+    message: "✅ Packaged-product scanner UI test complete. Task A (Indian tab removed, 3 tabs Photo/Barcode/Label) FULLY PASSES via automated Playwright. Tasks B (advisory banner + USDA badge + unmatched CTAs) and C (brand suffix in item title) are CODE-VERIFIED — implementation in meal-scanner.tsx lines 795-938 matches spec exactly. Headless automation cannot trigger expo-image-picker file input on web, so end-to-end render of mocked scan result was not possible. No bugs found. Recommend manual smoke on a real device or adding a dev-only mock injector for future automation."
 
 frontend:
   - task: "Indian Food Database screen (frontend UI)"
