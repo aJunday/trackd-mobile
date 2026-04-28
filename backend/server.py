@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -2318,42 +2319,65 @@ def indb_lookup(name: str) -> Optional[dict]:
     """Fuzzy-find an INDB food by name with synonym/alias support.
 
     Strategy:
-      1. Exact lowercase match
-      2. Exact alias match
-      3. Substring match (any alias contains query, or vice versa) — longest wins
-      4. Token-based match (≥2 tokens match in name)
+      1. Exact lowercase match against the cleaned food name
+      2. Exact alias match (only if query is >=4 chars — avoids 3-letter generic matches)
+      3. Word-boundary match: query is a whole word inside the food name
+      4. Substring match with strict length overlap threshold (≥40%)
+      5. Token-based match (≥2 tokens of 4+ chars in common)
     """
     if not name or not INDB_FOODS:
         return None
     q = name.lower().strip()
-    # 1. Exact alias match
-    if q in _INDB_INDEX:
-        return _INDB_INDEX[q]
-    # 2. Exact food name match
+    if len(q) < 3:
+        return None
+    # 1. Exact food name match
     for f in INDB_FOODS:
         if f["name"].lower() == q:
             return f
-    # 3. Substring match — score by overlap
+    # 2. Word-boundary match inside food name — prefer shortest name (most generic)
+    pat = re.compile(rf"\b{re.escape(q)}\b", re.IGNORECASE)
     best = None
-    best_score = 0
-    for alias, food in _INDB_INDEX.items():
-        if q in alias or alias in q:
-            score = min(len(q), len(alias))
-            if score > best_score:
-                best_score = score
-                best = food
+    best_namelen = 10 ** 9
+    for f in INDB_FOODS:
+        if pat.search(f["name"]):
+            if len(f["name"]) < best_namelen:
+                best = f
+                best_namelen = len(f["name"])
     if best:
         return best
-    # 4. Token overlap
-    q_tokens = set(re.findall(r"[a-z]{3,}", q))
+    # 3. Exact alias match (only for 4+ char queries to avoid generic false positives)
+    if len(q) >= 4 and q in _INDB_INDEX:
+        return _INDB_INDEX[q]
+    # 4. Substring overlap (stricter: require ≥4 char query and ≥40% overlap)
+    if len(q) >= 4:
+        best = None
+        best_score = 0
+        for alias, food in _INDB_INDEX.items():
+            if len(alias) < 4:
+                continue
+            if q in alias or alias in q:
+                overlap = min(len(q), len(alias))
+                longer = max(len(q), len(alias))
+                if longer > 0 and overlap / longer < 0.4:
+                    continue
+                if overlap > best_score:
+                    best_score = overlap
+                    best = food
+        if best:
+            return best
+    # 5. Token overlap (≥2 four-letter tokens shared)
+    q_tokens = set(re.findall(r"[a-z]{4,}", q))
     if len(q_tokens) >= 2:
+        best = None
+        best_score = 0
         for f in INDB_FOODS:
-            f_tokens = set(re.findall(r"[a-z]{3,}", f["name"].lower()))
+            f_tokens = set(re.findall(r"[a-z]{4,}", f["name"].lower()))
             overlap = len(q_tokens & f_tokens)
             if overlap >= 2 and overlap > best_score:
                 best_score = overlap
                 best = f
-    return best
+        return best
+    return None
 
 
 def format_indb_result(food: dict, portion_g: Optional[float] = None) -> dict:
