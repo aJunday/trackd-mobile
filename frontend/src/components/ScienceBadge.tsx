@@ -69,17 +69,39 @@ const ScienceBadge: React.FC<Props> = ({ refKeys, size = 'small' }) => {
                     {r.authors} · {r.journal} · {r.year}
                   </Text>
                   <Text style={styles.paperTakeaway}>{r.takeaway}</Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      Linking.openURL(
-                        `https://scholar.google.com/scholar?q=${encodeURIComponent(r.title)}`
-                      )
-                    }
-                    style={styles.linkBtn}
-                  >
-                    <Ionicons name="search" size={12} color={COLORS.gold} />
-                    <Text style={styles.linkText}>Find on Google Scholar</Text>
-                  </TouchableOpacity>
+                  <View style={styles.linkRow}>
+                    {r.doi ? (
+                      <TouchableOpacity
+                        onPress={() => Linking.openURL(`https://doi.org/${r.doi}`)}
+                        style={styles.linkBtn}
+                      >
+                        <Ionicons name="link" size={12} color={COLORS.gold} />
+                        <Text style={styles.linkText}>DOI</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {r.pubmed_id ? (
+                      <TouchableOpacity
+                        onPress={() =>
+                          Linking.openURL(`https://pubmed.ncbi.nlm.nih.gov/${r.pubmed_id}/`)
+                        }
+                        style={styles.linkBtn}
+                      >
+                        <Ionicons name="document-text" size={12} color={COLORS.gold} />
+                        <Text style={styles.linkText}>PubMed</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      onPress={() =>
+                        Linking.openURL(
+                          `https://scholar.google.com/scholar?q=${encodeURIComponent(r.title)}`
+                        )
+                      }
+                      style={styles.linkBtn}
+                    >
+                      <Ionicons name="search" size={12} color={COLORS.gold} />
+                      <Text style={styles.linkText}>Scholar</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ))}
               <View style={{ height: 24 }} />
@@ -146,7 +168,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(245, 166, 35, 0.12)',
+    borderWidth: 1,
+    borderColor: COLORS.goldDim,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
   },
   linkText: { color: COLORS.gold, fontSize: 11, fontWeight: '600' },
 });

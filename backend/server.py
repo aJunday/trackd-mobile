@@ -2357,11 +2357,25 @@ def indb_lookup(name: str) -> Optional[dict]:
 
 
 def format_indb_result(food: dict, portion_g: Optional[float] = None) -> dict:
-    """Convert an INDB food into the same shape used elsewhere in the app."""
+    """Convert an INDB food into the same shape used elsewhere in the app.
+
+    INDB stores serving.size_g as the TOTAL recipe weight and
+    servings_per_recipe as how many portions that recipe yields.
+    The realistic per-serving weight = size_g / servings_per_recipe.
+    """
     per100 = food.get("per_100g", {})
-    serving = food.get("serving", {})
-    # If no portion specified, use the default serving size
-    use_g = portion_g if portion_g else serving.get("size_g", 100)
+    serving = food.get("serving", {}) or {}
+    total_recipe_g = serving.get("size_g") or 0
+    servings_per_recipe = serving.get("servings_per_recipe") or 1
+    try:
+        per_serving_g = total_recipe_g / servings_per_recipe if servings_per_recipe else total_recipe_g
+    except ZeroDivisionError:
+        per_serving_g = total_recipe_g
+    # Sanity check: keep serving in realistic 20-500g range. Fall back to 100g if weird.
+    if not per_serving_g or per_serving_g <= 0 or per_serving_g > 800:
+        per_serving_g = 100.0
+    # If no portion specified, use the default per-serving size
+    use_g = portion_g if portion_g else per_serving_g
     factor = use_g / 100.0
     return {
         "name": food["name"],
@@ -2378,8 +2392,16 @@ def format_indb_result(food: dict, portion_g: Optional[float] = None) -> dict:
         "zinc_mg": round(per100.get("zinc_mg", 0) * factor, 2) if per100.get("zinc_mg") else None,
         "sodium_mg": round(per100.get("sodium_mg", 0) * factor, 1) if per100.get("sodium_mg") else None,
         "portion_g": round(use_g, 0),
-        "default_serving_g": serving.get("size_g"),
+        "default_serving_g": round(per_serving_g, 0),
+        "per_100g": {
+            "calories": per100.get("calories", 0),
+            "protein": per100.get("protein_g", 0),
+            "carbs": per100.get("carb_g", 0),
+            "fats": per100.get("fat_g", 0),
+            "fiber": per100.get("fiber_g", 0),
+        },
         "unit": serving.get("unit"),
+        "servings_per_recipe": servings_per_recipe,
         "source": "INDB_2024",
         "source_label": "Source: ICMR-NIN INDB 2024",
     }
@@ -2519,10 +2541,12 @@ async def gemini_food_scan(
     """Scan a meal photo using Gemini 2.5 Flash with direct API key."""
     import json
 
-    prompt = """You are a precise nutrition analyst. Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
+    prompt = """You are a precise nutrition analyst specializing in Indian cuisine (ICMR-NIN INDB 2024 reference data). Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
 
 Important guidelines:
-- For Indian foods, use accurate INDB-style values (e.g., dal tadka 290 cal/serving, paneer 321 cal/100g, biryani 490 cal/350g, idli 58 cal/piece, samosa 262 cal/100g).
+- For Indian foods, use the most common recognizable English name with the Hindi name in parentheses when helpful (e.g., "Dal Tadka", "Paneer Butter Masala", "Aloo Paratha", "Chapati (Roti)", "Idli", "Sambar"). This improves database matching.
+- Use realistic Indian serving sizes: 1 roti ≈ 30-40g, 1 katori dal ≈ 150g, 1 plate rice ≈ 150g cooked, 1 idli ≈ 40g, 1 dosa ≈ 80g, 1 samosa ≈ 60g, 1 cup tea ≈ 150ml.
+- Estimate calories per INDB lab-analyzed values when possible (dal 120-140 kcal/katori, paneer 321 kcal/100g, biryani 400-490 kcal/plate, idli 58 kcal/piece, samosa 262 kcal/100g, roti 120 kcal/piece, rice 130 kcal/100g cooked).
 - Numbers must be plain JSON numbers, not strings.
 - "uncertain_items" lists item names whose weight estimate has low confidence.
 - "total" must equal the sum of items.
@@ -2541,41 +2565,37 @@ Important guidelines:
         try:
             data = json.loads(text)
 
-            # Apply Indian-food override if matches
-            indian_lookup = {f["name"].lower(): f for f in INDIAN_FOODS_DB}
+            # Override with INDB lab-analyzed values when we find a match
             override_items = []
+            matched_any_indb = False
             for it in data.get("items", []):
                 name = (it.get("name") or "").strip()
-                weight = it.get("weight_g") or 0
-                key = name.lower()
-                # Try exact match or substring match against Indian DB
-                match = None
-                for k, f in indian_lookup.items():
-                    if k == key or any(t in key for t in f.get("tags", [])):
-                        match = f
-                        break
-                if match and weight > 0:
-                    if match.get("per_100g"):
-                        ratio = weight / 100.0
-                    else:
-                        # Per serving: assume 1 serving regardless of weight
-                        ratio = 1.0
+                weight = float(it.get("weight_g") or 0)
+                indb_match = indb_lookup(name) if name else None
+                if indb_match and weight > 0:
+                    formatted = format_indb_result(indb_match, portion_g=weight)
+                    matched_any_indb = True
                     override_items.append({
-                        "name": match["name"],
+                        "name": formatted["name"],
+                        "orig_name": formatted.get("orig_name"),
+                        "food_code": formatted.get("food_code"),
                         "weight_g": weight,
-                        "calories": round(match["calories"] * ratio),
-                        "protein_g": round(match["protein"] * ratio, 1),
-                        "carbs_g": round(match["carbs"] * ratio, 1),
-                        "fat_g": round(match["fats"] * ratio, 1),
+                        "calories": formatted["calories"],
+                        "protein_g": formatted["protein"],
+                        "carbs_g": formatted["carbs"],
+                        "fat_g": formatted["fats"],
+                        "fiber_g": formatted.get("fiber"),
+                        "source": "INDB_2024",
+                        "source_label": "Source: ICMR-NIN INDB 2024",
                     })
                 else:
                     override_items.append(it)
 
             total = {
-                "calories": round(sum(i.get("calories", 0) for i in override_items)),
-                "protein_g": round(sum(i.get("protein_g", 0) for i in override_items), 1),
-                "carbs_g": round(sum(i.get("carbs_g", 0) for i in override_items), 1),
-                "fat_g": round(sum(i.get("fat_g", 0) for i in override_items), 1),
+                "calories": round(sum(float(i.get("calories", 0) or 0) for i in override_items)),
+                "protein_g": round(sum(float(i.get("protein_g", 0) or 0) for i in override_items), 1),
+                "carbs_g": round(sum(float(i.get("carbs_g", 0) or 0) for i in override_items), 1),
+                "fat_g": round(sum(float(i.get("fat_g", 0) or 0) for i in override_items), 1),
             }
             return {
                 "success": True,
@@ -2583,6 +2603,8 @@ Important guidelines:
                 "items": override_items,
                 "total": total,
                 "uncertain_items": data.get("uncertain_items", []),
+                "indb_matched": matched_any_indb,
+                "source": INDB_SOURCE if matched_any_indb else None,
             }
         except json.JSONDecodeError:
             logger.error(f"Gemini food scan parse error: {text[:500]}")

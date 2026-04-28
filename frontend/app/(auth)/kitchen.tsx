@@ -281,6 +281,13 @@ export default function KitchenScreen() {
 
         <View style={styles.actionsGrid}>
           <ActionTile
+            icon="flag"
+            label="Indian DB"
+            sub="1014 INDB foods"
+            onPress={() => router.push('/(auth)/indian-foods')}
+            accent
+          />
+          <ActionTile
             icon="restaurant"
             label="Manual"
             sub="Add by name"
@@ -350,14 +357,19 @@ function ActionTile({
   label,
   sub,
   onPress,
+  accent,
 }: {
   icon: any;
   label: string;
   sub: string;
   onPress: () => void;
+  accent?: boolean;
 }) {
   return (
-    <TouchableOpacity style={styles.tile} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.tile, accent && styles.tileAccent]}
+      onPress={onPress}
+    >
       <Ionicons name={icon} size={22} color={ACCENT} />
       <Text style={styles.tileLabel}>{label}</Text>
       <Text style={styles.tileSub}>{sub}</Text>
@@ -480,6 +492,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
     gap: 6,
+  },
+  tileAccent: {
+    borderColor: 'rgba(245, 166, 35, 0.45)',
+    backgroundColor: 'rgba(245, 166, 35, 0.07)',
   },
   tileLabel: { color: '#fff', fontSize: 14, fontWeight: '800', marginTop: 6 },
   tileSub: { color: TEXT_MUTED, fontSize: 11 },

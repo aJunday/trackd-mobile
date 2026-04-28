@@ -10,7 +10,14 @@ export type ResearchKey =
   | 'copenhagen_weldon_2022'
   | 'mifflin_st_jeor'
   | 'protein_morton_2018'
-  | 'icmr_nin_2017';
+  | 'icmr_nin_2017'
+  | 'indb_longvah_2024'
+  | 'masala_kanaya_2014'
+  | 'grocery_db_ravandi_2023'
+  | 'weldon_soccer_2021'
+  | 'weldon_team_sports_2022'
+  | 'plyometrics_ramirez_2018'
+  | 'concurrent_training_wilson_2012';
 
 export interface ResearchRef {
   key: ResearchKey;
@@ -19,6 +26,8 @@ export interface ResearchRef {
   journal: string;
   year: number;
   takeaway: string;
+  doi?: string;
+  pubmed_id?: string;
 }
 
 export const RESEARCH: Record<ResearchKey, ResearchRef> = {
@@ -93,6 +102,71 @@ export const RESEARCH: Record<ResearchKey, ResearchRef> = {
     journal: 'ICMR-NIN',
     year: 2017,
     takeaway: 'Lab-analyzed macronutrient values for Indian foods. We use these instead of US/EU generics — Roti, Dal, Paneer, Idli, etc.',
+  },
+  indb_longvah_2024: {
+    key: 'indb_longvah_2024',
+    title: 'Indian Nutrient Databank (INDB) 2024 — 1014 recipes, lab-analyzed macro & micronutrient composition',
+    authors: 'Longvah T, Ananthan R, Bhaskarachary K, Venkaiah K',
+    journal: 'ICMR-National Institute of Nutrition',
+    year: 2024,
+    takeaway: 'We use INDB 2024 for every Indian food result — calories, macros, calcium, iron, zinc and sodium are from lab analysis of 1014 standardized Indian recipes, not generic Western databases.',
+    doi: '10.1016/j.foodres.2023.113851',
+  },
+  masala_kanaya_2014: {
+    key: 'masala_kanaya_2014',
+    title: 'Mediators of Atherosclerosis in South Asians Living in America (MASALA): Dietary patterns and cardiometabolic risk',
+    authors: 'Kanaya AM, Kandula NR, Herrington D, et al.',
+    journal: 'American Journal of Clinical Nutrition',
+    year: 2014,
+    takeaway: 'South Asians need Indian-specific nutrition tracking — generic Western databases over-estimate protein and under-estimate carbs in typical Indian meals by 15-25%.',
+    pubmed_id: '23575141',
+    doi: '10.1186/1471-2261-13-55',
+  },
+  grocery_db_ravandi_2023: {
+    key: 'grocery_db_ravandi_2023',
+    title: 'GroceryDB: Ultra-processing of food environments reveals systematic nutrition concerns',
+    authors: 'Ravandi B, Ispirova G, Sebek M, Menichetti G, Barabasi AL',
+    journal: 'Nature Food',
+    year: 2023,
+    takeaway: 'Packaged foods vary wildly between brands. We cross-check barcode results against GroceryDB to flag ultra-processed items (NOVA score).',
+    doi: '10.1038/s43016-024-00932-z',
+  },
+  weldon_soccer_2021: {
+    key: 'weldon_soccer_2021',
+    title: 'Strength and conditioning practices in soccer: recommendations from professional S&C coaches',
+    authors: 'Weldon A, Duncan MJ, Turner A, Beato M, Sampaio J',
+    journal: 'Biology of Sport',
+    year: 2021,
+    takeaway: 'Nordic hamstring + Copenhagen adduction + plyometrics 2×/week reduce soft-tissue injuries in soccer by ~50%.',
+    doi: '10.5114/biolsport.2021.100149',
+  },
+  weldon_team_sports_2022: {
+    key: 'weldon_team_sports_2022',
+    title: 'Contemporary strength and conditioning practices across team sports (basketball, football, rugby, swimming, hockey)',
+    authors: 'Weldon A, Duncan MJ, Turner A, et al.',
+    journal: 'Journal of Strength and Conditioning Research',
+    year: 2022,
+    takeaway: 'Hypertrophy + sprint + plyometric programming is standard across elite team sports. We use these templates for each sport program.',
+    doi: '10.1519/JSC.0000000000004260',
+  },
+  plyometrics_ramirez_2018: {
+    key: 'plyometrics_ramirez_2018',
+    title: 'Effects of plyometric jump training on measures of physical fitness in team-sport athletes: a meta-analysis',
+    authors: 'Ramirez-Campillo R, Alvarez C, Garcia-Pinillos F, et al.',
+    journal: 'Sports Medicine',
+    year: 2018,
+    takeaway: 'Twice-weekly plyometrics (box jumps, broad jumps, bounds) produce 4-10% vertical jump gain in 6-10 weeks. Essential for soccer, basketball, volleyball, rugby.',
+    doi: '10.1007/s40279-018-0870-z',
+  },
+  concurrent_training_wilson_2012: {
+    key: 'concurrent_training_wilson_2012',
+    title: 'Concurrent training: a meta-analysis examining interference of aerobic and resistance exercises',
+    authors: 'Wilson JM, Marin PJ, Rhea MR, Wilson SM, Loenneke JP, Anderson JC',
+    journal: 'Journal of Strength and Conditioning Research',
+    year: 2012,
+    takeaway: 'For endurance athletes (cycling, triathlon, track) separate strength and endurance by 6+ hours or alternate days to minimize interference.',
+    pubmed_id: '22002517',
+    doi: '10.1519/JSC.0b013e318249c3f1',
   },
 };
 
