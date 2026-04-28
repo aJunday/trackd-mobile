@@ -2306,7 +2306,75 @@ except Exception as _e:
     INDB_SOURCE = "missing"
     logger.warning(f"Could not load INDB: {_e}")
 
-# Build alias → food index for fast fuzzy matching
+# Load GroceryDB (Ravandi 2023) — 33k US packaged foods with processing scores
+_GROCERYDB_PATH = Path(__file__).parent / "data" / "grocerydb_foods.json"
+try:
+    with open(_GROCERYDB_PATH, "r", encoding="utf-8") as _f:
+        _GDB = _json.load(_f)
+    GROCERYDB_FOODS: List[dict] = _GDB.get("foods", [])
+    GROCERYDB_SOURCE = _GDB.get("source", "GroceryDB (Ravandi et al, Nature Food 2023)")
+    logger.info(f"Loaded {len(GROCERYDB_FOODS)} packaged foods from GroceryDB")
+except Exception as _e:
+    GROCERYDB_FOODS = []
+    GROCERYDB_SOURCE = "missing"
+    logger.warning(f"Could not load GroceryDB: {_e}")
+
+
+def grocerydb_lookup(brand: Optional[str], product: Optional[str]) -> Optional[dict]:
+    """Fuzzy text-match a packaged product in GroceryDB.
+
+    Strategy: require at least one meaningful product-name token to appear
+    in the GroceryDB product name (word-boundary). When a brand is supplied,
+    rank brand-matching candidates first. Returns the first kcal-positive
+    match in the same shape as `lookup_packaged_product`.
+    """
+    import re as _re
+    if not GROCERYDB_FOODS or not product:
+        return None
+    br = (brand or "").strip().lower()
+    pname = product.strip().lower()
+
+    # Meaningful tokens (≥4 chars, skip generic words)
+    tokens = set(_re.findall(r"[a-z]{4,}", pname))
+    tokens -= {"food", "product", "variety", "flavor", "flavour"}
+    if not tokens:
+        return None
+    min_overlap = max(1, (len(tokens) + 1) // 2)
+
+    candidates = []
+    for f in GROCERYDB_FOODS:
+        name_lower = f["name"].lower()
+        # Check first 80 chars only (product name, not ingredients)
+        head = name_lower[:80]
+        hits = sum(1 for t in tokens if _re.search(rf"\b{_re.escape(t)}\b", head))
+        if hits < min_overlap:
+            continue
+        brand_lower = (f.get("brand") or "").lower()
+        brand_match = br and (br in brand_lower or brand_lower in br)
+        candidates.append((0 if brand_match else 1, -hits, f))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: (x[0], x[1]))
+    f = candidates[0][2]
+    p100 = f.get("per_100g", {})
+    if not p100.get("calories") or p100["calories"] <= 0:
+        return None
+    return {
+        "name": f["name"],
+        "brand": f.get("brand") or brand,
+        "calories_per_100g": float(p100.get("calories", 0)),
+        "protein_per_100g": float(p100.get("protein", 0)),
+        "carbs_per_100g": float(p100.get("carbs", 0)),
+        "fats_per_100g": float(p100.get("fats", 0)),
+        "fiber_per_100g": float(p100.get("fiber", 0)),
+        "serving_size_g": 100,
+        "nova_class": f.get("nova_class"),
+        "fpro": f.get("fpro"),
+        "category": f.get("category"),
+        "source": "grocerydb",
+        "source_label": "Source: GroceryDB (Nature Food 2023)",
+    }
 _INDB_INDEX: Dict[str, dict] = {}
 for _food in INDB_FOODS:
     for _alias in _food.get("aliases", []):
@@ -2664,6 +2732,11 @@ async def lookup_packaged_product(brand: Optional[str], product: Optional[str]) 
                         }
     except Exception as e:
         logger.warning(f"OFF text search failed: {e}")
+
+    # --- Step 4: GroceryDB local lookup (Ravandi 2023) ---
+    gdb = grocerydb_lookup(br, name)
+    if gdb:
+        return gdb
 
     return None
 
