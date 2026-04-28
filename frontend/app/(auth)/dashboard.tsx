@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../_layout';
 import { recommendSplit, getAllSplits, getDayName, getTodayWorkout, DaysPerWeek, Goal, SplitRecommendation } from '../../src/data/splits';
 import CoachCardsSection from '../../src/components/CoachCardsSection';
+import HabitsSection from '../../src/components/HabitsSection';
 
 const ACCENT = '#F5A623';
 const PR = '#FF6B35';
@@ -290,6 +291,9 @@ export default function Dashboard() {
             onPress={() => router.push('/(auth)/kitchen')}
           />
         </View>
+
+        {/* Daily habits (P3) */}
+        <HabitsSection />
 
         {/* Recent workouts */}
         <Text style={styles.section}>Recent Workouts</Text>

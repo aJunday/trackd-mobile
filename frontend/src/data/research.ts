@@ -170,35 +170,156 @@ export const RESEARCH: Record<ResearchKey, ResearchRef> = {
   },
 };
 
-// Mapping templates / programs → research keys that back them
+// Mapping templates / programs → research keys that back them.
+// Per user spec (P1):
+//   Schoenfeld 2017 → ALL templates + ALL sport programs
+//   Androulakis-Korakakis 2024 → ALL templates + ALL sport programs
+//   Van Every 2025 → ALL templates
+//   Wolf-Nippard 2025 → Push, Pull, Upper, Full Body
+//   Zhu-Zhang 2024 (Nordic) → ALL sport programs + Leg Day
+//   Weldon 2021 → Soccer
+//   Weldon 2022 → Basketball, Football, Rugby, Swimming, Hockey
+//   Plyometrics meta → Soccer, Basketball, Volleyball, Rugby
+//   Concurrent training → Cycling, Triathlon (Track)
 export const TEMPLATE_RESEARCH: Record<string, ResearchKey[]> = {
-  preset_push: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'lengthened_partials_wolf_2025', 'mechanical_tension_van_every_2025'],
-  preset_pull: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'lengthened_partials_wolf_2025'],
-  preset_legs: ['volume_schoenfeld_2017', 'lengthened_partials_wolf_2025', 'nordic_zhu_2024', 'copenhagen_weldon_2022'],
-  preset_upper: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'mechanical_tension_van_every_2025'],
-  preset_lower: ['volume_schoenfeld_2017', 'lengthened_partials_wolf_2025', 'nordic_zhu_2024'],
-  preset_fullbody: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
-  preset_fullbody_b: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
-  preset_ppl: ['volume_schoenfeld_2017', 'lengthened_partials_wolf_2025', 'mechanical_tension_van_every_2025'],
+  preset_push: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
+  preset_pull: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
+  preset_legs: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'mechanical_tension_van_every_2025',
+    'nordic_zhu_2024',
+    'copenhagen_weldon_2022',
+  ],
+  preset_upper: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
+  preset_lower: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'mechanical_tension_van_every_2025',
+    'nordic_zhu_2024',
+  ],
+  preset_fullbody: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
+  preset_fullbody_b: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
+  preset_ppl: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
 };
 
 export const SPORT_PROGRAM_RESEARCH: Record<string, ResearchKey[]> = {
-  boxing: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
-  soccer: ['nordic_zhu_2024', 'copenhagen_weldon_2022'],
-  powerlifting: ['volume_schoenfeld_2017', 'technique_androulakis_2024'],
-  calisthenics: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
-  basketball: ['nordic_zhu_2024', 'mechanical_tension_van_every_2025'],
-  swimming: ['mechanical_tension_van_every_2025'],
-  track: ['nordic_zhu_2024', 'mechanical_tension_van_every_2025'],
-  mma: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
-  general: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'lengthened_partials_wolf_2025'],
-  football: ['nordic_zhu_2024', 'mechanical_tension_van_every_2025'],
-  volleyball: ['nordic_zhu_2024', 'mechanical_tension_van_every_2025'],
-  hockey: ['mechanical_tension_van_every_2025'],
-  baseball: ['mechanical_tension_van_every_2025'],
-  rugby: ['nordic_zhu_2024', 'volume_schoenfeld_2017'],
-  cycling: ['volume_schoenfeld_2017'],
-  gymnastics: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
-  golf: ['mechanical_tension_van_every_2025'],
-  wrestling: ['volume_schoenfeld_2017', 'mechanical_tension_van_every_2025'],
+  boxing: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  soccer: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'copenhagen_weldon_2022',
+    'weldon_soccer_2021',
+    'plyometrics_ramirez_2018',
+  ],
+  powerlifting: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  calisthenics: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  basketball: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'weldon_team_sports_2022',
+    'plyometrics_ramirez_2018',
+  ],
+  swimming: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'weldon_team_sports_2022',
+  ],
+  track: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'concurrent_training_wilson_2012',
+  ],
+  triathlon: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'concurrent_training_wilson_2012',
+  ],
+  mma: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  general: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'lengthened_partials_wolf_2025',
+    'mechanical_tension_van_every_2025',
+  ],
+  football: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'weldon_team_sports_2022',
+  ],
+  volleyball: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'plyometrics_ramirez_2018',
+  ],
+  hockey: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'weldon_team_sports_2022',
+  ],
+  baseball: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  rugby: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'weldon_team_sports_2022',
+    'plyometrics_ramirez_2018',
+  ],
+  cycling: [
+    'volume_schoenfeld_2017',
+    'technique_androulakis_2024',
+    'nordic_zhu_2024',
+    'concurrent_training_wilson_2012',
+  ],
+  gymnastics: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  golf: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
+  wrestling: ['volume_schoenfeld_2017', 'technique_androulakis_2024', 'nordic_zhu_2024'],
 };
+
+// Barcode/Packaged-food scanner results use GroceryDB methodology
+export const BARCODE_RESEARCH: ResearchKey[] = ['grocery_db_ravandi_2023'];
+
+// Indian food database screen & Indian-food scanner matches
+export const INDIAN_FOOD_RESEARCH: ResearchKey[] = [
+  'indb_longvah_2024',
+  'masala_kanaya_2014',
+  'icmr_nin_2017',
+];

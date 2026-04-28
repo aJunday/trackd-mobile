@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 import { recommendSplit, getAllSplits, getDayName, DaysPerWeek, Goal } from '../../src/data/splits';
+import WeightLogSection from '../../src/components/WeightLogSection';
 
 const ACCENT_COLOR = '#00D4FF';
 const GOLD = '#F5A623';
@@ -168,6 +169,8 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Menu Sections */}
+        <WeightLogSection />
+
         <View style={styles.menuSection}>
           <Text style={styles.sectionTitle}>Goals & Targets</Text>
           <MenuItem

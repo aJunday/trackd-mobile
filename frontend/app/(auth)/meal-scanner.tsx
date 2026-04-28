@@ -20,6 +20,8 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../_layout';
+import ScienceBadge from '../../src/components/ScienceBadge';
+import { BARCODE_RESEARCH, INDIAN_FOOD_RESEARCH } from '../../src/data/research';
 
 const ACCENT = '#F5A623';
 const GOLD = '#F5A623';
@@ -574,7 +576,10 @@ export default function MealScanner() {
 
               {barcodeProduct && (
                 <View style={[styles.itemCard, { marginTop: 18 }]}>
-                  <Text style={styles.itemName}>{barcodeProduct.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <Text style={[styles.itemName, { flex: 1 }]}>{barcodeProduct.name}</Text>
+                    <ScienceBadge refKeys={BARCODE_RESEARCH} size="small" />
+                  </View>
                   {!!barcodeProduct.brand && (
                     <Text style={styles.itemMacros}>{barcodeProduct.brand}</Text>
                   )}
@@ -800,6 +805,15 @@ export default function MealScanner() {
                       <Ionicons name="trash-outline" size={18} color={TEXT_MUTED} />
                     </TouchableOpacity>
                   </View>
+                  {(it as any).source === 'INDB_2024' ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <MaterialCommunityIcons name="shield-check" size={12} color={ACCENT} />
+                      <Text style={{ color: ACCENT, fontSize: 10, fontWeight: '700', flex: 1 }}>
+                        {(it as any).source_label || 'Source: ICMR-NIN INDB 2024'}
+                      </Text>
+                      <ScienceBadge refKeys={INDIAN_FOOD_RESEARCH} size="small" />
+                    </View>
+                  ) : null}
                   <Text style={styles.itemMacros}>
                     {it.calories} kcal · P{it.protein_g}g C{it.carbs_g}g F{it.fat_g}g
                   </Text>
