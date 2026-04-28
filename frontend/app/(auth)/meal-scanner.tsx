@@ -37,7 +37,7 @@ const DANGER = '#FF6B6B';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
-type Mode = 'photo' | 'barcode' | 'label' | 'indian';
+type Mode = 'photo' | 'barcode' | 'label';
 interface ScanItem {
   name: string;
   weight_g: number;
@@ -46,6 +46,14 @@ interface ScanItem {
   carbs_g: number;
   fat_g: number;
   cooking?: string;
+  // Optional metadata returned by the backend when a food matches a database
+  source?: string;
+  source_label?: string;
+  brand?: string;
+  brand_name?: string;
+  product_name?: string;
+  is_packaged?: boolean;
+  db_matched?: boolean;
 }
 interface IndianFood {
   name: string;
@@ -101,6 +109,9 @@ export default function MealScanner() {
     confidence: number;
     items: ScanItem[];
     uncertain: string[];
+    has_packaged?: boolean;
+    packaged_matched?: boolean;
+    packaged_unmatched?: boolean;
   } | null>(null);
 
   // Barcode state
@@ -206,8 +217,16 @@ export default function MealScanner() {
             cooking: 'dry',
             source: i.source,
             source_label: i.source_label,
+            brand: i.brand,
+            brand_name: i.brand_name,
+            product_name: i.product_name,
+            is_packaged: i.is_packaged,
+            db_matched: i.db_matched,
           })),
           uncertain: data.uncertain_items || [],
+          has_packaged: !!data.has_packaged,
+          packaged_matched: !!data.packaged_matched,
+          packaged_unmatched: !!data.packaged_unmatched,
         });
       } else {
         Alert.alert(
@@ -521,7 +540,7 @@ export default function MealScanner() {
 
         {/* Mode tabs */}
         <View style={styles.modeBar}>
-          {(['photo', 'barcode', 'label', 'indian'] as Mode[]).map((m) => (
+          {(['photo', 'barcode', 'label'] as Mode[]).map((m) => (
             <TouchableOpacity
               key={m}
               style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
@@ -536,15 +555,13 @@ export default function MealScanner() {
                     ? 'camera'
                     : m === 'barcode'
                     ? 'barcode'
-                    : m === 'label'
-                    ? 'reader'
-                    : 'restaurant'
+                    : 'reader'
                 }
                 size={14}
                 color={mode === m ? '#000' : '#fff'}
               />
               <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-                {m === 'photo' ? 'Photo' : m === 'barcode' ? 'Barcode' : m === 'label' ? 'Label' : 'Indian'}
+                {m === 'photo' ? 'Photo' : m === 'barcode' ? 'Barcode' : 'Label'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -775,6 +792,22 @@ export default function MealScanner() {
           {/* RESULT */}
           {scanResult && !scanning && (
             <View>
+              {/* Packaged-product advisory banner */}
+              {scanResult.has_packaged && (
+                <View style={styles.packagedBanner}>
+                  <MaterialCommunityIcons
+                    name="package-variant"
+                    size={18}
+                    color={ACCENT}
+                  />
+                  <Text style={styles.packagedBannerText}>
+                    {scanResult.packaged_matched && !scanResult.packaged_unmatched
+                      ? 'Packaged product matched in our database — for exact values scan the barcode or nutrition label.'
+                      : 'For exact values scan the barcode or nutrition label.'}
+                  </Text>
+                </View>
+              )}
+
               {/* Confidence */}
               <View style={styles.confCard}>
                 <View
@@ -828,7 +861,12 @@ export default function MealScanner() {
               {scanResult.items.map((it, idx) => (
                 <View key={idx} style={styles.itemCard}>
                   <View style={styles.itemHeader}>
-                    <Text style={styles.itemName}>{it.name}</Text>
+                    <Text style={styles.itemName}>
+                      {it.name}
+                      {it.brand ? (
+                        <Text style={{ color: TEXT_MUTED, fontWeight: '400' }}>  ·  {it.brand}</Text>
+                      ) : null}
+                    </Text>
                     <TouchableOpacity
                       onPress={() => {
                         const items = [...scanResult.items];
@@ -839,6 +877,8 @@ export default function MealScanner() {
                       <Ionicons name="trash-outline" size={18} color={TEXT_MUTED} />
                     </TouchableOpacity>
                   </View>
+
+                  {/* Source badge for INDB Indian foods */}
                   {(it as any).source === 'INDB_2024' ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                       <MaterialCommunityIcons name="shield-check" size={12} color={ACCENT} />
@@ -848,6 +888,55 @@ export default function MealScanner() {
                       <ScienceBadge refKeys={INDIAN_FOOD_RESEARCH} size="small" />
                     </View>
                   ) : null}
+
+                  {/* Source badge for packaged USDA / OFF matches */}
+                  {it.is_packaged && it.db_matched ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <MaterialCommunityIcons name="shield-check" size={12} color={SUCCESS} />
+                      <Text style={{ color: SUCCESS, fontSize: 10, fontWeight: '700', flex: 1 }}>
+                        {it.source_label || 'Source: USDA FoodData Central'}
+                      </Text>
+                      <ScienceBadge refKeys={BARCODE_RESEARCH} size="small" />
+                    </View>
+                  ) : null}
+
+                  {/* Estimate banner + CTA for packaged but unmatched */}
+                  {it.is_packaged && !it.db_matched ? (
+                    <View style={styles.unmatchedBox}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="information-circle" size={14} color={WARN} />
+                        <Text style={styles.unmatchedTitle}>
+                          Estimated values — not in our database
+                        </Text>
+                      </View>
+                      <Text style={styles.unmatchedSub}>
+                        Scan the barcode or nutrition label for exact values.
+                      </Text>
+                      <View style={styles.unmatchedRow}>
+                        <TouchableOpacity
+                          style={styles.unmatchedBtn}
+                          onPress={() => {
+                            haptic();
+                            setMode('barcode');
+                          }}
+                        >
+                          <Ionicons name="barcode" size={14} color="#000" />
+                          <Text style={styles.unmatchedBtnText}>Scan Barcode</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.unmatchedBtn, styles.unmatchedBtnSecondary]}
+                          onPress={() => {
+                            haptic();
+                            setMode('label');
+                          }}
+                        >
+                          <Ionicons name="reader" size={14} color="#fff" />
+                          <Text style={[styles.unmatchedBtnText, { color: '#fff' }]}>Scan Label</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : null}
+
                   <Text style={styles.itemMacros}>
                     {it.calories} kcal · P{it.protein_g}g C{it.carbs_g}g F{it.fat_g}g
                   </Text>
@@ -1189,6 +1278,68 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   itemHeader: { flexDirection: 'row', justifyContent: 'space-between' },
+  packagedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(245, 166, 35, 0.12)',
+    borderWidth: 1,
+    borderColor: '#7A5510',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  packagedBannerText: {
+    color: ACCENT,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 17,
+  },
+  unmatchedBox: {
+    backgroundColor: 'rgba(255, 209, 102, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 209, 102, 0.35)',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    gap: 6,
+  },
+  unmatchedTitle: {
+    color: WARN,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  unmatchedSub: {
+    color: TEXT_MUTED,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  unmatchedRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  unmatchedBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: ACCENT,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  unmatchedBtnSecondary: {
+    backgroundColor: '#222',
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  unmatchedBtnText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   itemName: { color: '#fff', fontSize: 15, fontWeight: '700', flex: 1 },
   itemMacros: { color: TEXT_MUTED, fontSize: 12, marginTop: 4 },
   portionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },

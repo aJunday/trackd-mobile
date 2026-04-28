@@ -1,320 +1,117 @@
-"""
-Backend tests for Indian Food Database (INDB 2024) scanner endpoints.
-Tests the 11 scenarios outlined in the review request, plus regression checks.
-"""
-import os
+"""Regression + smoke tests for packaged product detection review."""
 import sys
-import json
-import requests
+import httpx
 
-BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or "https://fitness-command-7.preview.emergentagent.com"
-API = BASE.rstrip("/") + "/api"
-SESSION_TOKEN = "test_session_trackd_1777237904201"
-AUTH = {"Authorization": f"Bearer {SESSION_TOKEN}"}
+BASE = "https://fitness-command-7.preview.emergentagent.com/api"
+TOKEN = "test_session_trackd_1777237904201"
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
-results = []  # (scenario, passed: bool, summary, details)
+# 1x1 white pixel PNG from review
+TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
-def record(scenario, ok, summary, details=""):
-    status = "[PASS]" if ok else "[FAIL]"
-    print(f"{status} {scenario}: {summary}")
-    if details and not ok:
-        print(f"    DETAIL: {details}")
-    results.append((scenario, ok, summary, details))
+results = []
 
-def get(path, **kwargs):
-    return requests.get(API + path, timeout=30, **kwargs)
+def ok(name, cond, detail=""):
+    results.append((name, cond, detail))
+    status = "PASS" if cond else "FAIL"
+    print(f"[{status}] {name} — {detail}")
 
-def s1_search_dal():
-    r = get("/scanner/indian-foods", params={"q": "dal", "limit": 10})
-    if r.status_code != 200:
-        record("S1 search dal", False, f"HTTP {r.status_code}", r.text[:300])
-        return []
-    data = r.json()
-    foods = data.get("foods", [])
-    issues = []
-    if len(foods) < 1:
-        issues.append("foods array empty")
-    if data.get("source") != "ICMR-NIN Indian Nutrient Databank (INDB) 2024":
-        issues.append(f"top-level source mismatch: {data.get('source')!r}")
-    if data.get("version") != "INDB 2024":
-        issues.append(f"version mismatch: {data.get('version')!r}")
-    required_food_keys = ["name","food_code","calories","protein","carbs","fats","fiber",
-                          "portion_g","default_serving_g","unit","per_100g","source",
-                          "source_label","servings_per_recipe"]
-    p100_keys = ["calories","protein","carbs","fats","fiber"]
-    for i, f in enumerate(foods):
-        for k in required_food_keys:
-            if k not in f:
-                issues.append(f"food[{i}] missing key {k}")
-        if isinstance(f.get("per_100g"), dict):
-            for k in p100_keys:
-                if k not in f["per_100g"]:
-                    issues.append(f"food[{i}].per_100g missing {k}")
-        if f.get("source") != "INDB_2024":
-            issues.append(f"food[{i}].source = {f.get('source')!r}")
-        if f.get("source_label") != "Source: ICMR-NIN INDB 2024":
-            issues.append(f"food[{i}].source_label mismatch")
-        if not isinstance(f.get("calories"), (int, float)):
-            issues.append(f"food[{i}].calories not numeric")
-    summary = f"{len(foods)} foods returned, source={data.get('source')!r}, version={data.get('version')!r}"
-    if issues:
-        record("S1 search dal", False, summary, "; ".join(issues[:8]))
-    else:
-        record("S1 search dal", True, summary)
-    return foods
+with httpx.Client(timeout=60) as c:
+    # R1
+    try:
+        r = c.get(f"{BASE}/scanner/indian-foods", params={"q": "paneer", "limit": 3})
+        data = r.json()
+        cond = (
+            r.status_code == 200
+            and isinstance(data.get("foods"), list)
+            and len(data["foods"]) > 0
+            and data.get("source") == "ICMR-NIN Indian Nutrient Databank (INDB) 2024"
+        )
+        ok("R1 /indian-foods?q=paneer&limit=3", cond,
+           f"status={r.status_code} foods_len={len(data.get('foods',[]))} source={data.get('source')!r}")
+    except Exception as e:
+        ok("R1", False, f"Exception {e}")
 
-def s2_all():
-    r = get("/scanner/indian-foods/all", params={"offset": 0, "limit": 50})
-    if r.status_code != 200:
-        record("S2 all offset=0&limit=50", False, f"HTTP {r.status_code}", r.text[:300])
-        return []
-    data = r.json()
-    foods = data.get("foods", [])
-    issues = []
-    if len(foods) != 50:
-        issues.append(f"len(foods)={len(foods)} expected 50")
-    if data.get("total") != 1014:
-        issues.append(f"total={data.get('total')} expected 1014")
-    if data.get("offset") != 0:
-        issues.append(f"offset={data.get('offset')}")
-    if data.get("limit") != 50:
-        issues.append(f"limit={data.get('limit')}")
-    if "source" not in data:
-        issues.append("source missing")
-    if "version" not in data:
-        issues.append("version missing")
-    summary = f"len={len(foods)} total={data.get('total')}"
-    if issues:
-        record("S2 all", False, summary, "; ".join(issues))
-    else:
-        record("S2 all", True, summary)
-    return foods
+    # R2
+    try:
+        r = c.get(f"{BASE}/scanner/indian-foods/all", params={"offset": 0, "limit": 50})
+        data = r.json()
+        cond = (
+            r.status_code == 200
+            and len(data.get("foods", [])) == 50
+            and data.get("total") == 1014
+        )
+        ok("R2 /indian-foods/all offset=0 limit=50", cond,
+           f"status={r.status_code} foods_len={len(data.get('foods',[]))} total={data.get('total')}")
+    except Exception as e:
+        ok("R2", False, f"Exception {e}")
 
-def s3_idli():
-    r = get("/scanner/indian-foods", params={"q": "idli", "limit": 5})
-    if r.status_code != 200:
-        record("S3 idli", False, f"HTTP {r.status_code}", r.text[:300])
-        return []
-    foods = r.json().get("foods", [])
-    issues = []
-    if not foods:
-        issues.append("no foods")
-    direct = [f for f in foods if f["name"].strip().lower() == "idli"]
-    if not direct:
-        direct = [f for f in foods if f["name"].lower().startswith("idli")]
-    if not direct:
-        issues.append(f"no direct Idli match. names={[f['name'] for f in foods]}")
-    else:
-        d = direct[0]
-        fc = d.get("food_code", "")
-        if not isinstance(fc, str) or not fc:
-            issues.append(f"food_code empty: {fc!r}")
-        ds = d.get("default_serving_g", 0)
-        if not (20 <= ds <= 800):
-            issues.append(f"Idli default_serving_g out of 20-800 range: {ds}")
-    for f in foods:
-        ds = f.get("default_serving_g", 0)
-        if not (20 <= ds <= 800):
-            issues.append(f"food {f.get('name')!r} default_serving_g={ds} OOR")
-    summary = f"{len(foods)} matches, direct={direct[0]['name'] if direct else 'NONE'}, default_serving_g={direct[0].get('default_serving_g') if direct else 'n/a'}, food_code={direct[0].get('food_code') if direct else 'n/a'}"
-    if issues:
-        record("S3 idli", False, summary, "; ".join(issues[:6]))
-    else:
-        record("S3 idli", True, summary)
-    return foods
+    # R3
+    try:
+        r = c.get(f"{BASE}/scanner/indian-foods/lookup", params={"name": "dal"})
+        data = r.json()
+        match = data.get("match")
+        name = (match or {}).get("name", "") if match else ""
+        cond = r.status_code == 200 and match is not None and "dal" in name.lower()
+        ok("R3 /indian-foods/lookup?name=dal", cond,
+           f"status={r.status_code} match.name={name!r}")
+    except Exception as e:
+        ok("R3", False, f"Exception {e}")
 
-def s4_biryani():
-    r = get("/scanner/indian-foods", params={"q": "biryani", "limit": 5})
-    if r.status_code != 200:
-        record("S4 biryani", False, f"HTTP {r.status_code}", r.text[:300])
-        return []
-    foods = r.json().get("foods", [])
-    issues = []
-    if not foods:
-        issues.append("no biryani results")
-    names = [f["name"] for f in foods]
-    bad_serving = [(f["name"], f.get("default_serving_g")) for f in foods
-                   if f.get("default_serving_g", 0) > 800 or f.get("default_serving_g", 0) <= 0]
-    if bad_serving:
-        issues.append(f"bad serving sizes: {bad_serving}")
-    for f in foods:
-        if f.get("source_label") != "Source: ICMR-NIN INDB 2024":
-            issues.append(f"{f['name']} bad source_label")
-    summary = f"{len(foods)} biryani matches: {names}; servings_g={[f.get('default_serving_g') for f in foods]}"
-    if issues:
-        record("S4 biryani", False, summary, "; ".join(issues[:5]))
-    else:
-        record("S4 biryani", True, summary)
-    return foods
+    # R4
+    try:
+        r = c.get(f"{BASE}/scanner/indian-foods/lookup",
+                  params={"name": "nonexistentfoodxyz123abc"})
+        data = r.json()
+        cond = r.status_code == 200 and data.get("match") is None
+        ok("R4 lookup nonexistent -> match null", cond,
+           f"status={r.status_code} match={data.get('match')}")
+    except Exception as e:
+        ok("R4", False, f"Exception {e}")
 
-def s5_lookup_paneer():
-    r = get("/scanner/indian-foods/lookup", params={"name": "paneer"})
-    if r.status_code != 200:
-        record("S5 lookup paneer", False, f"HTTP {r.status_code}", r.text[:300])
-        return
-    data = r.json()
-    m = data.get("match")
-    issues = []
-    if m is None:
-        issues.append("match is null")
-    else:
-        if "calories" not in m:
-            issues.append("missing calories")
-        if "protein" not in m:
-            issues.append("missing protein")
-        if m.get("source_label") != "Source: ICMR-NIN INDB 2024":
-            issues.append(f"source_label = {m.get('source_label')!r}")
-        for k in ["calcium_mg","iron_mg","zinc_mg","sodium_mg"]:
-            if k not in m:
-                issues.append(f"micro key {k} missing entirely")
-    summary = f"match={m.get('name') if m else None} calories={m.get('calories') if m else None}"
-    if issues:
-        record("S5 lookup paneer", False, summary, "; ".join(issues))
-    else:
-        record("S5 lookup paneer", True, summary)
+    # R5
+    try:
+        r = c.post(f"{BASE}/scanner/usda-barcode",
+                   headers=AUTH,
+                   json={"barcode": "0070470496528"})
+        cond = r.status_code == 200
+        data = r.json() if cond else {}
+        ok("R5 /usda-barcode 0070470496528 (auth)", cond,
+           f"status={r.status_code} success={data.get('success')} source={data.get('source')}")
+    except Exception as e:
+        ok("R5", False, f"Exception {e}")
 
-def s6_lookup_daal():
-    r = get("/scanner/indian-foods/lookup", params={"name": "daal"})
-    if r.status_code != 200:
-        record("S6 lookup daal alias", False, f"HTTP {r.status_code}", r.text[:300])
-        return
-    data = r.json()
-    m = data.get("match")
-    if not m:
-        record("S6 lookup daal alias", False, "match null - alias daal->dal not expanded", json.dumps(data)[:300])
-        return
-    name_l = m.get("name","").lower()
-    if "dal" not in name_l and "pulse" not in name_l and "lentil" not in name_l:
-        record("S6 lookup daal alias", False, f"matched {m['name']!r} - not a dal/pulse/lentil food")
-        return
-    record("S6 lookup daal alias", True, f"daal -> {m['name']!r}")
+    # R6
+    try:
+        r = c.get(f"{BASE}/scanner/cooking-methods")
+        data = r.json()
+        methods = data.get("methods") or data.get("cooking_methods") or []
+        cond = r.status_code == 200 and len(methods) == 4
+        ok("R6 /cooking-methods", cond,
+           f"status={r.status_code} n_methods={len(methods)}")
+    except Exception as e:
+        ok("R6", False, f"Exception {e}")
 
-def s7_lookup_nonexistent():
-    r = get("/scanner/indian-foods/lookup", params={"name": "nonexistentfoodxyz123abc"})
-    if r.status_code != 200:
-        record("S7 lookup not_found", False, f"HTTP {r.status_code}", r.text[:300])
-        return
-    data = r.json()
-    if data.get("match") is not None:
-        record("S7 lookup not_found", False, f"match={data.get('match',{}).get('name')!r} expected null", json.dumps(data)[:300])
-        return
-    if data.get("source") != "not_found":
-        record("S7 lookup not_found", False, f"source={data.get('source')!r} expected not_found")
-        return
-    record("S7 lookup not_found", True, "match=null, source=not_found")
+    # S1 smoke
+    try:
+        r = c.post(f"{BASE}/scanner/gemini-food",
+                   headers=AUTH,
+                   json={"image_base64": TINY_PNG_B64}, timeout=120)
+        data = r.json()
+        msg = (data.get("message") or "").lower()
+        cond = (
+            r.status_code == 200
+            and data.get("success") is False
+            and ("identify" in msg or "couldn't" in msg or "lighting" in msg or "read the photo" in msg)
+        )
+        ok("S1 /gemini-food 1x1 PNG -> success:false", cond,
+           f"status={r.status_code} success={data.get('success')} msg={data.get('message')!r}")
+    except Exception as e:
+        ok("S1", False, f"Exception {e}")
 
-def s8_lookup_scaling():
-    r = get("/scanner/indian-foods/lookup", params={"name": "dal", "portion_g": 200})
-    if r.status_code != 200:
-        record("S8 lookup scaling 200g", False, f"HTTP {r.status_code}", r.text[:300])
-        return
-    m = r.json().get("match")
-    if not m:
-        record("S8 lookup scaling 200g", False, "match null")
-        return
-    issues = []
-    portion = m.get("portion_g")
-    if portion is None or not (190 <= portion <= 210):
-        issues.append(f"portion_g={portion} not ~200")
-    p100_cal = m.get("per_100g", {}).get("calories", 0)
-    expected_cal = p100_cal * 2
-    actual_cal = m.get("calories", 0)
-    if abs(actual_cal - expected_cal) > max(1.0, expected_cal * 0.05):
-        issues.append(f"calories={actual_cal} expected ~{expected_cal} (per_100g.cal={p100_cal})")
-    summary = f"name={m.get('name')!r} portion={portion} cal={actual_cal} per_100g.cal={p100_cal}"
-    if issues:
-        record("S8 lookup scaling", False, summary, "; ".join(issues))
-    else:
-        record("S8 lookup scaling", True, summary)
-
-def s9_serving_math(foods_list):
-    issues = []
-    for label, foods in foods_list:
-        for f in foods or []:
-            ds = f.get("default_serving_g", -1)
-            if not (20 <= ds <= 800):
-                issues.append(f"[{label}] {f.get('name')!r} default_serving_g={ds}")
-    if issues:
-        record("S9 serving sanity (20-800g)", False, f"{len(issues)} violations", "; ".join(issues[:6]))
-    else:
-        record("S9 serving sanity (20-800g)", True, "all default_serving_g within 20-800")
-
-def s10_source_label(foods_list):
-    issues = []
-    for label, foods in foods_list:
-        for f in foods or []:
-            if f.get("source_label") != "Source: ICMR-NIN INDB 2024":
-                issues.append(f"[{label}] {f.get('name')!r} source_label={f.get('source_label')!r}")
-    if issues:
-        record("S10 source_label everywhere", False, f"{len(issues)} mismatches", "; ".join(issues[:5]))
-    else:
-        record("S10 source_label everywhere", True, "all foods have correct source_label")
-
-def s11_cooking_methods():
-    r = get("/scanner/cooking-methods")
-    if r.status_code != 200:
-        record("S11 cooking-methods", False, f"HTTP {r.status_code}", r.text[:300])
-        return
-    methods = r.json().get("methods")
-    if not isinstance(methods, dict) or not methods:
-        record("S11 cooking-methods", False, f"methods bad: {type(methods).__name__}")
-        return
-    record("S11 cooking-methods", True, f"{len(methods)} methods present")
-
-def r_templates():
-    r = get("/templates", headers=AUTH)
-    if r.status_code != 200:
-        record("REG templates", False, f"HTTP {r.status_code}", r.text[:200])
-        return
-    presets = r.json().get("presets", [])
-    if len(presets) != 8:
-        record("REG templates", False, f"presets length={len(presets)} expected 8")
-        return
-    record("REG templates", True, f"{len(presets)} presets")
-
-def r_exercise_details():
-    r = get("/exercises/details", params={"name":"Bench Press"})
-    if r.status_code != 200:
-        record("REG exercises/details", False, f"HTTP {r.status_code}", r.text[:200])
-        return
-    d = r.json()
-    if d.get("source") != "free-exercise-db":
-        record("REG exercises/details", False, f"source={d.get('source')!r}")
-        return
-    record("REG exercises/details", True, f"matched {d.get('matched_name')!r}")
-
-def r_programs_current():
-    r = get("/programs/current", headers=AUTH)
-    if r.status_code != 200:
-        record("REG programs/current", False, f"HTTP {r.status_code}", r.text[:200])
-        return
-    record("REG programs/current", True, "200 OK")
-
-if __name__ == "__main__":
-    print(f"Testing against: {API}\n")
-    foods1 = s1_search_dal()
-    foods2 = s2_all()
-    foods3 = s3_idli()
-    foods4 = s4_biryani()
-    s5_lookup_paneer()
-    s6_lookup_daal()
-    s7_lookup_nonexistent()
-    s8_lookup_scaling()
-    s9_serving_math([("S1 dal", foods1), ("S3 idli", foods3)])
-    s10_source_label([("S1 dal", foods1), ("S2 all", foods2), ("S3 idli", foods3), ("S4 biryani", foods4)])
-    s11_cooking_methods()
-    print("\n--- Regression ---")
-    r_templates()
-    r_exercise_details()
-    r_programs_current()
-
-    print("\n=========== SUMMARY ===========")
-    passed_count = sum(1 for r in results if r[1])
-    total = len(results)
-    for s, ok, summary, detail in results:
-        mark = "PASS" if ok else "FAIL"
-        print(f"[{mark}] {s} :: {summary}")
-        if detail and not ok:
-            print(f"        > {detail}")
-    print(f"\n{passed_count}/{total} passed")
-    sys.exit(0 if passed_count == total else 1)
+passed = sum(1 for _, c, _ in results if c)
+total = len(results)
+print(f"\n==== RESULTS: {passed}/{total} passed ====")
+for name, cond, detail in results:
+    print(f"  {'PASS' if cond else 'FAIL'} {name}")
+sys.exit(0 if passed == total else 1)

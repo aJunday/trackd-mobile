@@ -2539,6 +2539,135 @@ async def _gemini_vision(image_base64: str, prompt: str, system_instruction: str
             raise HTTPException(status_code=502, detail="Gemini returned no content")
 
 
+async def lookup_packaged_product(brand: Optional[str], product: Optional[str]) -> Optional[dict]:
+    """Search USDA → Open Food Facts for a packaged product by brand + name.
+
+    Returns a normalized nutrition dict with `source` and `source_label`, or None.
+    Used by the photo scanner when Gemini identifies a packaged product.
+    """
+    import httpx
+    name = (product or "").strip()
+    br = (brand or "").strip()
+    if not name:
+        return None
+    query = f"{br} {name}".strip()
+    usda_key = os.getenv("USDA_API_KEY")
+
+    # --- Step 1: USDA FoodData Central text search (branded foods) ---
+    # Require at least one meaningful product-name token (≥4 chars) to appear in
+    # the result description. Prevents "Sparkling Water" from returning
+    # unrelated items like "Strawberry Spread" from the same brand.
+    prod_tokens = set(re.findall(r"[a-z]{4,}", (name or "").lower()))
+    # Truly generic noise words that carry no product info
+    prod_tokens -= {"food", "product", "variety", "flavor", "flavour"}
+    # Minimum tokens that must appear — majority for multi-word products
+    min_overlap = max(1, (len(prod_tokens) + 1) // 2)
+
+    def _matches_product(description: str) -> bool:
+        if not prod_tokens:
+            return True  # no meaningful tokens — accept brand match alone
+        # Look only in the first 60 chars of description (product name, not ingredients)
+        d = (description or "").lower()[:60]
+        hits = sum(1 for t in prod_tokens if re.search(rf"\b{re.escape(t)}\b", d))
+        return hits >= min_overlap
+
+    if usda_key:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    "https://api.nal.usda.gov/fdc/v1/foods/search",
+                    params={
+                        "query": query,
+                        "dataType": "Branded",
+                        "api_key": usda_key,
+                        "pageSize": 10,
+                    },
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    foods = data.get("foods", [])
+                    # Filter: result description must share a product-name token
+                    foods = [f for f in foods if _matches_product(f.get("description"))]
+                    # Rank: brand-owner match first
+                    if br:
+                        foods = sorted(
+                            foods,
+                            key=lambda f: (
+                                0 if br.lower() in (f.get("brandOwner", "") or "").lower()
+                                  or br.lower() in (f.get("brandName", "") or "").lower()
+                                else 1
+                            ),
+                        )
+                    for f in foods:
+                        nutrients = {
+                            (n.get("nutrientName") or ""): n.get("value")
+                            for n in f.get("foodNutrients", [])
+                        }
+                        cal = nutrients.get("Energy") or nutrients.get("Energy (Atwater General Factors)")
+                        prot = nutrients.get("Protein")
+                        if cal and cal > 0:
+                            return {
+                                "name": f.get("description") or name,
+                                "brand": f.get("brandOwner") or f.get("brandName") or br,
+                                "calories_per_100g": float(cal),
+                                "protein_per_100g": float(prot or 0),
+                                "carbs_per_100g": float(nutrients.get("Carbohydrate, by difference") or 0),
+                                "fats_per_100g": float(nutrients.get("Total lipid (fat)") or 0),
+                                "fiber_per_100g": float(nutrients.get("Fiber, total dietary") or 0),
+                                "serving_size_g": f.get("servingSize") or 100,
+                                "source": "usda",
+                                "source_label": "Source: USDA FoodData Central",
+                            }
+        except Exception as e:
+            logger.warning(f"USDA text search failed: {e}")
+
+    # --- Step 2: Open Food Facts text search ---
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            off = await client.get(
+                "https://world.openfoodfacts.org/cgi/search.pl",
+                params={
+                    "search_terms": query,
+                    "search_simple": 1,
+                    "action": "process",
+                    "json": 1,
+                    "page_size": 3,
+                },
+            )
+            if off.status_code == 200:
+                od = off.json()
+                products = od.get("products", []) or []
+                # Prefer products whose brand matches
+                if br:
+                    products = sorted(
+                        products,
+                        key=lambda p: (
+                            0 if br.lower() in (p.get("brands", "") or "").lower()
+                            else 1
+                        ),
+                    )
+                for p in products:
+                    n = p.get("nutriments", {}) or {}
+                    cal = n.get("energy-kcal_100g") or n.get("energy-kcal")
+                    if cal and float(cal) > 0:
+                        return {
+                            "name": p.get("product_name") or name,
+                            "brand": p.get("brands") or br,
+                            "calories_per_100g": float(cal),
+                            "protein_per_100g": float(n.get("proteins_100g") or 0),
+                            "carbs_per_100g": float(n.get("carbohydrates_100g") or 0),
+                            "fats_per_100g": float(n.get("fat_100g") or 0),
+                            "fiber_per_100g": float(n.get("fiber_100g") or 0),
+                            "serving_size_g": 100,
+                            "source": "openfoodfacts",
+                            "source_label": "Source: Open Food Facts",
+                        }
+    except Exception as e:
+        logger.warning(f"OFF text search failed: {e}")
+
+    return None
+
+
 @scanner_router.post("/gemini-food")
 async def gemini_food_scan(
     request: GeminiScanRequest,
@@ -2547,9 +2676,11 @@ async def gemini_food_scan(
     """Scan a meal photo using Gemini 2.5 Flash with direct API key."""
     import json
 
-    prompt = """You are a precise nutrition analyst specializing in Indian cuisine (ICMR-NIN INDB 2024 reference data). Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
+    prompt = """You are a precise nutrition analyst specializing in Indian cuisine (ICMR-NIN INDB 2024 reference data). Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number, "is_packaged": boolean, "brand_name": string or null, "product_name": string or null}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
 
 Important guidelines:
+- If you identify a **packaged product** with a visible brand name (bottle, box, bag, can, jar, wrapper with a logo), set "is_packaged": true and fill in "brand_name" (e.g. "Kirkland Signature", "Coca-Cola", "Nature Valley") and "product_name" (e.g. "Sparkling Water Lime", "Protein Granola Bar"). The app will look up exact nutrition in product databases. Still give your best weight/calorie estimate for fallback.
+- For unpackaged/cooked foods: leave "is_packaged": false and set brand_name/product_name to null.
 - For Indian foods, use the most common recognizable English name with the Hindi name in parentheses when helpful (e.g., "Dal Tadka", "Paneer Butter Masala", "Aloo Paratha", "Chapati (Roti)", "Idli", "Sambar"). This improves database matching.
 - Use realistic Indian serving sizes: 1 roti ≈ 30-40g, 1 katori dal ≈ 150g, 1 plate rice ≈ 150g cooked, 1 idli ≈ 40g, 1 dosa ≈ 80g, 1 samosa ≈ 60g, 1 cup tea ≈ 150ml.
 - Estimate calories per INDB lab-analyzed values when possible (dal 120-140 kcal/katori, paneer 321 kcal/100g, biryani 400-490 kcal/plate, idli 58 kcal/piece, samosa 262 kcal/100g, roti 120 kcal/piece, rice 130 kcal/100g cooked).
@@ -2571,12 +2702,51 @@ Important guidelines:
         try:
             data = json.loads(text)
 
-            # Override with INDB lab-analyzed values when we find a match
+            # Override with INDB lab-analyzed values (Indian foods) and USDA/OFF
+            # values (packaged products) when we find matches.
             override_items = []
             matched_any_indb = False
+            matched_any_packaged = False
+            any_packaged_unmatched = False  # Gemini flagged packaged but we found no DB match
             for it in data.get("items", []):
                 name = (it.get("name") or "").strip()
                 weight = float(it.get("weight_g") or 0)
+                is_packaged = bool(it.get("is_packaged"))
+                brand_name = it.get("brand_name")
+                product_name = it.get("product_name")
+
+                # --- Packaged-product lookup takes priority if Gemini flagged it ---
+                if is_packaged and (brand_name or product_name):
+                    pkg = await lookup_packaged_product(brand_name, product_name)
+                    if pkg and weight > 0:
+                        ratio = weight / 100.0
+                        override_items.append({
+                            "name": pkg.get("name") or name or "Packaged Item",
+                            "brand": pkg.get("brand") or brand_name,
+                            "product_name": product_name,
+                            "weight_g": weight,
+                            "calories": round(pkg["calories_per_100g"] * ratio),
+                            "protein_g": round(pkg["protein_per_100g"] * ratio, 1),
+                            "carbs_g": round(pkg["carbs_per_100g"] * ratio, 1),
+                            "fat_g": round(pkg["fats_per_100g"] * ratio, 1),
+                            "fiber_g": round(pkg.get("fiber_per_100g", 0) * ratio, 1),
+                            "is_packaged": True,
+                            "db_matched": True,
+                            "source": pkg["source"].upper(),
+                            "source_label": pkg["source_label"],
+                        })
+                        matched_any_packaged = True
+                        continue
+                    # Packaged but not found — keep Gemini estimate and flag it
+                    any_packaged_unmatched = True
+                    it["is_packaged"] = True
+                    it["db_matched"] = False
+                    it["brand_name"] = brand_name
+                    it["product_name"] = product_name
+                    override_items.append(it)
+                    continue
+
+                # --- INDB (Indian food) match ---
                 indb_match = indb_lookup(name) if name else None
                 if indb_match and weight > 0:
                     formatted = format_indb_result(indb_match, portion_g=weight)
@@ -2617,6 +2787,9 @@ Important guidelines:
                 "total": total,
                 "uncertain_items": data.get("uncertain_items", []),
                 "indb_matched": matched_any_indb,
+                "packaged_matched": matched_any_packaged,
+                "packaged_unmatched": any_packaged_unmatched,
+                "has_packaged": matched_any_packaged or any_packaged_unmatched,
                 "source": INDB_SOURCE if matched_any_indb else None,
             }
         except json.JSONDecodeError:
