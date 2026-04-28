@@ -2431,24 +2431,6 @@ def format_indb_result(food: dict, portion_g: Optional[float] = None) -> dict:
     }
 
 
-# Keep a small legacy fallback for things INDB doesn't cover (e.g. raw ingredients)
-LEGACY_INDIAN_FALLBACK = [
-    {"name": "White Rice (cooked)", "per_100g": True, "calories": 130, "protein": 2.7, "carbs": 28.0, "fats": 0.3, "tags": ["rice"]},
-    {"name": "Paneer", "per_100g": True, "calories": 321, "protein": 18.3, "carbs": 3.1, "fats": 25.0, "tags": ["dairy"]},
-    {"name": "Tandoori Chicken", "per_100g": True, "calories": 165, "protein": 25.0, "carbs": 1.0, "fats": 6.5, "tags": ["chicken"]},
-]
-
-# Kept for backward compat with earlier code paths
-INDIAN_FOODS_DB = [
-    {"name": f["name"], "per_100g": True,
-     "calories": f.get("per_100g", {}).get("calories", 0),
-     "protein": f.get("per_100g", {}).get("protein_g", 0),
-     "carbs": f.get("per_100g", {}).get("carb_g", 0),
-     "fats": f.get("per_100g", {}).get("fat_g", 0),
-     "tags": f.get("aliases", [])[:4]}
-    for f in INDB_FOODS
-] or LEGACY_INDIAN_FALLBACK
-
 # Cooking method calorie additions
 COOKING_METHODS = {
     "dry": {"label": "Dry / Steamed", "extra_kcal": 0, "extra_fat_g": 0},
@@ -2462,7 +2444,7 @@ async def get_indian_foods(q: str = "", limit: int = 50):
     """Return INDB foods matching the query. If q is empty returns first 50
     alphabetically. Full list available via /indian-foods/all."""
     if not INDB_FOODS:
-        return {"foods": INDIAN_FOODS_DB, "source": "legacy"}
+        return {"foods": [], "source": "unavailable", "total": 0}
     items = INDB_FOODS
     if q:
         ql = q.lower().strip()
