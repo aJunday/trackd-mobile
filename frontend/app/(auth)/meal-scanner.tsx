@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '../_layout';
 import ScienceBadge from '../../src/components/ScienceBadge';
 import { BARCODE_RESEARCH, INDIAN_FOOD_RESEARCH } from '../../src/data/research';
+import { authFetch } from '../../src/utils/authFetch';
 
 const ACCENT = '#F5A623';
 const GOLD = '#F5A623';
@@ -87,7 +88,8 @@ const confidenceColor = (c: number) => {
 };
 
 export default function MealScanner() {
-  const { sessionToken } = useAuth();
+  // Keep useAuth() just to access sessionToken for gating (not needed for fetches — authFetch does that).
+  useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('photo');
@@ -123,14 +125,6 @@ export default function MealScanner() {
 
   const [mealType, setMealType] = useState('lunch');
   const [logging, setLogging] = useState(false);
-
-  const apiHeaders = useCallback(
-    () => ({
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sessionToken}`,
-    }),
-    [sessionToken]
-  );
 
   // Load indian foods
   useEffect(() => {
@@ -182,12 +176,22 @@ export default function MealScanner() {
   const runScan = async (b64: string) => {
     setScanning(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/scanner/gemini-food`, {
+      const res = await authFetch(`${BACKEND_URL}/api/scanner/gemini-food`, {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_base64: b64 }),
       });
-      const data = await res.json();
+      if (res.status === 401) {
+        Alert.alert('Session expired', 'Please sign in again to scan meals.');
+        return;
+      }
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        Alert.alert('Server error', `Scanner returned ${res.status}. Please try again.`);
+        return;
+      }
       if (data.success) {
         haptic('success');
         setScanResult({
@@ -200,14 +204,20 @@ export default function MealScanner() {
             carbs_g: i.carbs_g || 0,
             fat_g: i.fat_g || 0,
             cooking: 'dry',
+            source: i.source,
+            source_label: i.source_label,
           })),
           uncertain: data.uncertain_items || [],
         });
       } else {
-        Alert.alert('Scan failed', data.message || 'Could not analyze the image');
+        Alert.alert(
+          'Scan failed',
+          data.message ||
+            "Couldn't identify food in the photo. Try better lighting, centered framing, or use the barcode/label tab."
+        );
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Network error');
+      Alert.alert('Network error', e?.message || 'Check your connection and try again.');
     } finally {
       setScanning(false);
     }
@@ -255,12 +265,22 @@ export default function MealScanner() {
     setBarcodeLoading(true);
     setBarcodeProduct(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/scanner/usda-barcode`, {
+      const res = await authFetch(`${BACKEND_URL}/api/scanner/usda-barcode`, {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ barcode: barcode.trim() }),
       });
-      const data = await res.json();
+      if (res.status === 401) {
+        Alert.alert('Session expired', 'Please sign in again.');
+        return;
+      }
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        Alert.alert('Server error', `Barcode lookup returned ${res.status}.`);
+        return;
+      }
       if (data.success && data.product) {
         setBarcodeProduct({ ...data.product, source: data.source });
         setBarcodeServingG('100');
@@ -269,7 +289,7 @@ export default function MealScanner() {
         Alert.alert('Not found', data.message || 'Product not in USDA or OFF database');
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Network error');
+      Alert.alert('Network error', e?.message || 'Check your connection and try again.');
     } finally {
       setBarcodeLoading(false);
     }
@@ -324,20 +344,34 @@ export default function MealScanner() {
   const runLabelOcr = async (b64: string) => {
     setLabelLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/scanner/label-ocr`, {
+      const res = await authFetch(`${BACKEND_URL}/api/scanner/label-ocr`, {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_base64: b64 }),
       });
-      const data = await res.json();
+      if (res.status === 401) {
+        Alert.alert('Session expired', 'Please sign in again to scan labels.');
+        return;
+      }
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        Alert.alert('Server error', `Label OCR returned ${res.status}. Please try again.`);
+        return;
+      }
       if (data.success) {
         haptic('success');
         setLabelOcr(data);
       } else {
-        Alert.alert('OCR failed', data.message || 'Could not read label');
+        Alert.alert(
+          'Could not read label',
+          data.message ||
+            "Make sure the Nutrition Facts panel is clearly visible, well-lit, and not blurry. Try again with a closer shot."
+        );
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Network error');
+      Alert.alert('Network error', e?.message || 'Check your connection and try again.');
     } finally {
       setLabelLoading(false);
     }
@@ -347,9 +381,9 @@ export default function MealScanner() {
     if (!labelOcr) return;
     // Save to personal foods
     try {
-      await fetch(`${BACKEND_URL}/api/scanner/save-label`, {
+      await authFetch(`${BACKEND_URL}/api/scanner/save-label`, {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: labelOcr.product_name || 'Custom Label Item',
           calories: labelOcr.calories || 0,
@@ -422,9 +456,9 @@ export default function MealScanner() {
         { calories: 0, protein: 0, carbs: 0, fats: 0 }
       );
       const name = scanResult.items.map((i) => i.name).join(', ').slice(0, 60);
-      const res = await fetch(`${BACKEND_URL}/api/nutrition/meals`, {
+      const res = await authFetch(`${BACKEND_URL}/api/nutrition/meals`, {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
           meal_type: mealType,

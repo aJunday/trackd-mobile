@@ -2603,6 +2603,13 @@ Important guidelines:
                 "carbs_g": round(sum(float(i.get("carbs_g", 0) or 0) for i in override_items), 1),
                 "fat_g": round(sum(float(i.get("fat_g", 0) or 0) for i in override_items), 1),
             }
+            # If Gemini returned nothing or zero-calorie results, flag as failure
+            if not override_items or total["calories"] <= 0:
+                return {
+                    "success": False,
+                    "message": "Couldn't identify any food in the photo. Try better lighting, center the plate, and make sure the food is clearly visible — or use the Barcode/Label tabs for packaged items.",
+                    "confidence": data.get("confidence", 0),
+                }
             return {
                 "success": True,
                 "confidence": data.get("confidence", 0.7),
@@ -2616,7 +2623,7 @@ Important guidelines:
             logger.error(f"Gemini food scan parse error: {text[:500]}")
             return {
                 "success": False,
-                "message": "Could not parse scan result",
+                "message": "Couldn't read the photo. Please retake it with better lighting and try again.",
                 "raw": text[:500],
             }
     except HTTPException:
@@ -2748,9 +2755,21 @@ All values are PER serving (not per container). If a field cannot be read, set i
             text = text[:-3].strip()
         try:
             data = json.loads(text)
+            # If Gemini couldn't read anything meaningful, flag as failure so frontend shows a retry prompt
+            cals = float(data.get("calories") or 0)
+            prot = float(data.get("protein_g") or 0)
+            carbs = float(data.get("carbs_g") or 0)
+            fat = float(data.get("fat_g") or 0)
+            conf = float(data.get("confidence") or 0)
+            if cals <= 0 and prot <= 0 and carbs <= 0 and fat <= 0:
+                return {
+                    "success": False,
+                    "message": "Couldn't read the Nutrition Facts panel. Try a closer, sharper shot with good lighting — make sure the full panel (Calories, Protein, Carbs, Fat) is visible and not glared.",
+                    "confidence": conf,
+                }
             return {"success": True, **data}
         except json.JSONDecodeError:
-            return {"success": False, "message": "Could not parse label", "raw": text[:500]}
+            return {"success": False, "message": "Label text was unreadable. Please retake the photo.", "raw": text[:500]}
     except HTTPException:
         raise
     except Exception as e:
