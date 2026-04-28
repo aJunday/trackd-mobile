@@ -2290,25 +2290,118 @@ async def calculate_plates(
 
 # ==================== INDIAN FOODS DB + GEMINI SCANNER ====================
 
-# Built-in Indian foods database (mix of per-100g and per-serving)
-INDIAN_FOODS_DB = [
-    {"name": "Dal Tadka", "per_unit": "1 serving", "per_100g": False, "calories": 290, "protein": 18.0, "carbs": 40.0, "fats": 6.0, "tags": ["dal", "lentil"]},
-    {"name": "Roti / Chapati", "per_100g": True, "calories": 297, "protein": 9.7, "carbs": 53.0, "fats": 3.7, "tags": ["bread", "chapati", "roti"]},
+# Load full ICMR-NIN INDB 2024 database (1014 foods, lab-analyzed per-100g nutrients)
+_INDB_PATH = Path(__file__).parent / "data" / "indb_foods.json"
+try:
+    with open(_INDB_PATH, "r", encoding="utf-8") as _f:
+        _INDB = _json.load(_f)
+    INDB_FOODS: List[dict] = _INDB.get("foods", [])
+    INDB_VERSION = _INDB.get("version", "INDB 2024")
+    INDB_SOURCE = _INDB.get("source", "ICMR-NIN INDB 2024")
+    logger.info(f"Loaded {len(INDB_FOODS)} Indian foods from INDB 2024")
+except Exception as _e:
+    INDB_FOODS = []
+    INDB_VERSION = "missing"
+    INDB_SOURCE = "missing"
+    logger.warning(f"Could not load INDB: {_e}")
+
+# Build alias → food index for fast fuzzy matching
+_INDB_INDEX: Dict[str, dict] = {}
+for _food in INDB_FOODS:
+    for _alias in _food.get("aliases", []):
+        # Keep the first (usually most specific) match for each alias
+        if _alias not in _INDB_INDEX:
+            _INDB_INDEX[_alias] = _food
+
+
+def indb_lookup(name: str) -> Optional[dict]:
+    """Fuzzy-find an INDB food by name with synonym/alias support.
+
+    Strategy:
+      1. Exact lowercase match
+      2. Exact alias match
+      3. Substring match (any alias contains query, or vice versa) — longest wins
+      4. Token-based match (≥2 tokens match in name)
+    """
+    if not name or not INDB_FOODS:
+        return None
+    q = name.lower().strip()
+    # 1. Exact alias match
+    if q in _INDB_INDEX:
+        return _INDB_INDEX[q]
+    # 2. Exact food name match
+    for f in INDB_FOODS:
+        if f["name"].lower() == q:
+            return f
+    # 3. Substring match — score by overlap
+    best = None
+    best_score = 0
+    for alias, food in _INDB_INDEX.items():
+        if q in alias or alias in q:
+            score = min(len(q), len(alias))
+            if score > best_score:
+                best_score = score
+                best = food
+    if best:
+        return best
+    # 4. Token overlap
+    q_tokens = set(re.findall(r"[a-z]{3,}", q))
+    if len(q_tokens) >= 2:
+        for f in INDB_FOODS:
+            f_tokens = set(re.findall(r"[a-z]{3,}", f["name"].lower()))
+            overlap = len(q_tokens & f_tokens)
+            if overlap >= 2 and overlap > best_score:
+                best_score = overlap
+                best = f
+    return best
+
+
+def format_indb_result(food: dict, portion_g: Optional[float] = None) -> dict:
+    """Convert an INDB food into the same shape used elsewhere in the app."""
+    per100 = food.get("per_100g", {})
+    serving = food.get("serving", {})
+    # If no portion specified, use the default serving size
+    use_g = portion_g if portion_g else serving.get("size_g", 100)
+    factor = use_g / 100.0
+    return {
+        "name": food["name"],
+        "orig_name": food.get("orig_name"),
+        "food_code": food["food_code"],
+        "calories": round(per100.get("calories", 0) * factor, 1),
+        "protein": round(per100.get("protein_g", 0) * factor, 1),
+        "carbs": round(per100.get("carb_g", 0) * factor, 1),
+        "fats": round(per100.get("fat_g", 0) * factor, 1),
+        "fiber": round(per100.get("fiber_g", 0) * factor, 1),
+        "sugar": round(per100.get("sugar_g", 0) * factor, 1) if per100.get("sugar_g") else None,
+        "calcium_mg": round(per100.get("calcium_mg", 0) * factor, 1) if per100.get("calcium_mg") else None,
+        "iron_mg": round(per100.get("iron_mg", 0) * factor, 2) if per100.get("iron_mg") else None,
+        "zinc_mg": round(per100.get("zinc_mg", 0) * factor, 2) if per100.get("zinc_mg") else None,
+        "sodium_mg": round(per100.get("sodium_mg", 0) * factor, 1) if per100.get("sodium_mg") else None,
+        "portion_g": round(use_g, 0),
+        "default_serving_g": serving.get("size_g"),
+        "unit": serving.get("unit"),
+        "source": "INDB_2024",
+        "source_label": "Source: ICMR-NIN INDB 2024",
+    }
+
+
+# Keep a small legacy fallback for things INDB doesn't cover (e.g. raw ingredients)
+LEGACY_INDIAN_FALLBACK = [
     {"name": "White Rice (cooked)", "per_100g": True, "calories": 130, "protein": 2.7, "carbs": 28.0, "fats": 0.3, "tags": ["rice"]},
     {"name": "Paneer", "per_100g": True, "calories": 321, "protein": 18.3, "carbs": 3.1, "fats": 25.0, "tags": ["dairy"]},
-    {"name": "Chana Dal", "per_100g": True, "calories": 150, "protein": 8.5, "carbs": 25.0, "fats": 2.5, "tags": ["dal", "lentil"]},
-    {"name": "Rajma (cooked)", "per_100g": True, "calories": 127, "protein": 8.7, "carbs": 22.8, "fats": 0.5, "tags": ["beans", "kidney"]},
-    {"name": "Chicken Biryani", "per_unit": "1 serving (350g)", "per_100g": False, "calories": 490, "protein": 26.0, "carbs": 63.0, "fats": 14.0, "tags": ["rice", "chicken"]},
-    {"name": "Palak Paneer", "per_unit": "1 serving (200g)", "per_100g": False, "calories": 280, "protein": 12.0, "carbs": 14.0, "fats": 18.0, "tags": ["paneer", "spinach"]},
-    {"name": "Masala Dosa", "per_unit": "1 serving", "per_100g": False, "calories": 260, "protein": 5.5, "carbs": 40.0, "fats": 8.0, "tags": ["dosa", "south"]},
-    {"name": "Idli", "per_unit": "1 piece", "per_100g": False, "calories": 58, "protein": 2.0, "carbs": 12.2, "fats": 0.4, "tags": ["south"]},
-    {"name": "Samosa", "per_100g": True, "calories": 262, "protein": 4.4, "carbs": 30.1, "fats": 14.9, "tags": ["snack", "fried"]},
-    {"name": "Chole (cooked)", "per_100g": True, "calories": 164, "protein": 8.9, "carbs": 27.4, "fats": 2.6, "tags": ["chickpea"]},
-    {"name": "Moong Dal (cooked)", "per_100g": True, "calories": 104, "protein": 7.6, "carbs": 18.6, "fats": 0.4, "tags": ["dal", "lentil"]},
-    {"name": "Masoor Dal (cooked)", "per_100g": True, "calories": 116, "protein": 9.0, "carbs": 20.0, "fats": 0.4, "tags": ["dal", "lentil"]},
-    {"name": "Aloo Gobi", "per_100g": True, "calories": 110, "protein": 3.0, "carbs": 14.0, "fats": 5.0, "tags": ["potato", "cauliflower"]},
     {"name": "Tandoori Chicken", "per_100g": True, "calories": 165, "protein": 25.0, "carbs": 1.0, "fats": 6.5, "tags": ["chicken"]},
 ]
+
+# Kept for backward compat with earlier code paths
+INDIAN_FOODS_DB = [
+    {"name": f["name"], "per_100g": True,
+     "calories": f.get("per_100g", {}).get("calories", 0),
+     "protein": f.get("per_100g", {}).get("protein_g", 0),
+     "carbs": f.get("per_100g", {}).get("carb_g", 0),
+     "fats": f.get("per_100g", {}).get("fat_g", 0),
+     "tags": f.get("aliases", [])[:4]}
+    for f in INDB_FOODS
+] or LEGACY_INDIAN_FALLBACK
 
 # Cooking method calorie additions
 COOKING_METHODS = {
@@ -2319,16 +2412,54 @@ COOKING_METHODS = {
 }
 
 @scanner_router.get("/indian-foods")
-async def get_indian_foods(q: str = ""):
-    """Get built-in Indian foods database, optionally filtered by query."""
-    items = INDIAN_FOODS_DB
+async def get_indian_foods(q: str = "", limit: int = 50):
+    """Return INDB foods matching the query. If q is empty returns first 50
+    alphabetically. Full list available via /indian-foods/all."""
+    if not INDB_FOODS:
+        return {"foods": INDIAN_FOODS_DB, "source": "legacy"}
+    items = INDB_FOODS
     if q:
-        ql = q.lower()
-        items = [
-            f for f in items
-            if ql in f["name"].lower() or any(ql in t for t in f.get("tags", []))
-        ]
-    return {"foods": items}
+        ql = q.lower().strip()
+        hits = []
+        for f in items:
+            if ql in f["name"].lower() or any(ql in a for a in f.get("aliases", [])):
+                hits.append(f)
+        items = hits
+    # Return ready-to-display shape
+    return {
+        "foods": [format_indb_result(f) for f in items[:limit]],
+        "total": len(items),
+        "source": INDB_SOURCE,
+        "version": INDB_VERSION,
+    }
+
+
+@scanner_router.get("/indian-foods/all")
+async def get_all_indian_foods(offset: int = 0, limit: int = 200):
+    """Paginated access to the full INDB database (1014 entries).
+    Used by the Indian Food Database browse screen."""
+    if not INDB_FOODS:
+        return {"foods": [], "total": 0}
+    slice_ = INDB_FOODS[offset: offset + limit]
+    return {
+        "foods": [format_indb_result(f) for f in slice_],
+        "total": len(INDB_FOODS),
+        "offset": offset,
+        "limit": limit,
+        "source": INDB_SOURCE,
+        "version": INDB_VERSION,
+    }
+
+
+@scanner_router.get("/indian-foods/lookup")
+async def lookup_indian_food(name: str, portion_g: Optional[float] = None):
+    """Fuzzy-lookup a single INDB food by name/alias. Used by Gemini scanner
+    to enrich AI-detected foods with lab-analyzed nutrient values."""
+    food = indb_lookup(name)
+    if not food:
+        return {"match": None, "source": "not_found"}
+    return {"match": format_indb_result(food, portion_g)}
+
 
 @scanner_router.get("/cooking-methods")
 async def get_cooking_methods():
