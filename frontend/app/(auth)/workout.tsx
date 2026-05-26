@@ -29,6 +29,7 @@ import ExerciseQuickDetail from '../../src/components/ExerciseQuickDetail';
 import ExerciseOptionsMenu from '../../src/components/ExerciseOptionsMenu';
 import { TEMPLATE_RESEARCH } from '../../src/data/research';
 import { Storage } from '../../src/utils/storage';
+import { useActiveWorkout } from '../../src/context/WorkoutContext';
 
 const ACCENT = '#F5A623';
 const GOLD = '#F5A623';
@@ -147,6 +148,18 @@ export default function WorkoutScreen() {
   }>();
 
   const [active, setActive] = useState<ActiveWorkout | null>(null);
+  const [invalidSet, setInvalidSet] = useState<{ eid: string; sid: string; msg: string } | null>(null);
+  const { startSession: startGlobalWorkout, endSession: endGlobalWorkout } = useActiveWorkout();
+
+  // Sync local workout state ↔ global context so the floating banner can show
+  useEffect(() => {
+    if (active) {
+      startGlobalWorkout(active.name).catch(() => {});
+    } else {
+      endGlobalWorkout().catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!active, active?.name]);
   const [programContext, setProgramContext] = useState<{
     program?: string;
     week?: number;
@@ -691,6 +704,13 @@ export default function WorkoutScreen() {
     if (!set || !ex) return;
 
     const newCompleted = !set.completed;
+    // Validation: weight and reps must both be > 0 before marking complete
+    if (newCompleted && (!set.weight || set.weight <= 0 || !set.reps || set.reps <= 0)) {
+      haptic('warning');
+      setInvalidSet({ eid, sid, msg: 'Enter weight and reps to complete this set' });
+      setTimeout(() => setInvalidSet(null), 2500);
+      return;
+    }
     if (newCompleted) {
       haptic('medium');
       // Check PR
@@ -956,6 +976,8 @@ export default function WorkoutScreen() {
             <ExerciseCard
               key={ex.id}
               exercise={ex}
+              invalidSetId={invalidSet?.eid === ex.id ? invalidSet.sid : null}
+              invalidSetMsg={invalidSet?.eid === ex.id ? invalidSet.msg : null}
               onAddSet={() => addSet(ex.id)}
               onRemoveSet={(sid) => removeSet(ex.id, sid)}
               onUpdateSet={(sid, patch) => updateSet(ex.id, sid, patch)}
@@ -1100,6 +1122,8 @@ function ExerciseCard({
   onUpdateRestTimer,
   onReplaceExercise,
   onCreateSuperset,
+  invalidSetId,
+  invalidSetMsg,
 }: {
   exercise: ExerciseEntry;
   onAddSet: () => void;
@@ -1114,6 +1138,8 @@ function ExerciseCard({
   onUpdateRestTimer?: (seconds: number) => void;
   onReplaceExercise?: () => void;
   onCreateSuperset?: () => void;
+  invalidSetId?: string | null;
+  invalidSetMsg?: string | null;
 }) {
   const [musclePri, setMusclePri] = useState<MuscleEntry[]>([]);
   const [muscleSec, setMuscleSec] = useState<MuscleEntry[]>([]);
@@ -1244,8 +1270,14 @@ function ExerciseCard({
           onToggle={() => onToggleComplete(s.id)}
           onRemove={() => onRemoveSet(s.id)}
           onPlate={() => onPlateCalc(s.weight)}
+          invalid={invalidSetId === s.id}
         />
       ))}
+      {invalidSetMsg && (
+        <Text style={{ color: '#FF3B30', fontSize: 12, fontWeight: '600', marginTop: 4, marginLeft: 38 }}>
+          {invalidSetMsg}
+        </Text>
+      )}
 
       <TouchableOpacity style={styles.addSetBtn} onPress={onAddSet}>
         <Ionicons name="add" size={18} color={ACCENT} />
@@ -1277,6 +1309,7 @@ function SetRow({
   onToggle,
   onRemove,
   onPlate,
+  invalid,
 }: {
   set: SetEntry;
   prev?: { weight: number; reps: number } | null;
@@ -1284,12 +1317,34 @@ function SetRow({
   onToggle: () => void;
   onRemove: () => void;
   onPlate: () => void;
+  invalid?: boolean;
 }) {
   const [w, setW] = useState(String(set.weight || ''));
   const [r, setR] = useState(String(set.reps || ''));
+  const shake = useRef(new Animated.Value(0)).current;
 
   useEffect(() => setW(String(set.weight || '')), [set.weight]);
   useEffect(() => setR(String(set.reps || '')), [set.reps]);
+
+  // Trigger shake animation when an invalid attempt is made
+  useEffect(() => {
+    if (invalid) {
+      Animated.sequence([
+        Animated.timing(shake, { toValue: -8, duration: 50, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 8, duration: 50, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: -6, duration: 50, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 6, duration: 50, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 0, duration: 50, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [invalid, shake]);
+
+  const canComplete = (set.weight || 0) > 0 && (set.reps || 0) > 0;
+  const checkBg = set.completed
+    ? (set.is_pr ? GOLD : ACCENT)
+    : canComplete
+      ? '#1F1F22'
+      : '#15151A';
 
   const commitW = (v: string) => {
     const n = parseFloat(v) || 0;
@@ -1301,7 +1356,7 @@ function SetRow({
   };
 
   return (
-    <View style={[styles.setRow, set.completed && styles.setRowDone, set.is_pr && styles.setRowPR]}>
+    <Animated.View style={[styles.setRow, set.completed && styles.setRowDone, set.is_pr && styles.setRowPR, invalid && { borderColor: '#FF3B30', borderWidth: 1, transform: [{ translateX: shake }] }]}>
       <Pressable onLongPress={onRemove} style={{ width: 30 }}>
         <Text style={styles.setNum}>{set.set_number}</Text>
       </Pressable>
@@ -1311,7 +1366,7 @@ function SetRow({
         </Text>
       </TouchableOpacity>
       <TextInput
-        style={[styles.setInput, { flex: 1 }]}
+        style={[styles.setInput, { flex: 1 }, invalid && !set.weight && { borderColor: '#FF3B30', borderWidth: 1 }]}
         value={w}
         onChangeText={setW}
         onBlur={() => commitW(w)}
@@ -1321,7 +1376,7 @@ function SetRow({
         selectTextOnFocus
       />
       <TextInput
-        style={[styles.setInput, { flex: 1 }]}
+        style={[styles.setInput, { flex: 1 }, invalid && !set.reps && { borderColor: '#FF3B30', borderWidth: 1 }]}
         value={r}
         onChangeText={setR}
         onBlur={() => commitR(r)}
@@ -1334,7 +1389,8 @@ function SetRow({
         onPress={onToggle}
         style={[
           styles.checkBtn,
-          set.completed && { backgroundColor: set.is_pr ? GOLD : ACCENT, borderColor: 'transparent' },
+          { backgroundColor: checkBg, opacity: canComplete || set.completed ? 1 : 0.5 },
+          set.completed && { borderColor: 'transparent' },
         ]}
       >
         {set.is_pr ? (
@@ -1343,11 +1399,11 @@ function SetRow({
           <Ionicons
             name={set.completed ? 'checkmark' : 'checkmark-outline'}
             size={20}
-            color={set.completed ? '#000' : '#555'}
+            color={set.completed ? '#000' : canComplete ? ACCENT : '#444'}
           />
         )}
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
 }
 

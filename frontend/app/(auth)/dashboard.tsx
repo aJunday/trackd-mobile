@@ -165,7 +165,6 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <DailyWarningIntro onDone={() => {}} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={

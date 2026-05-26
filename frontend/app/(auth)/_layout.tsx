@@ -3,6 +3,9 @@ import { Tabs } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Platform, View, StyleSheet } from 'react-native';
 import { useAuth } from '../_layout';
+import DailyWarningIntro from '../../src/components/DailyWarningIntro';
+import ActiveWorkoutBanner from '../../src/components/ActiveWorkoutBanner';
+import { WorkoutProvider } from '../../src/context/WorkoutContext';
 
 const ACCENT = '#F5A623';
 const TAB_BG = 'rgba(10,10,10,0.94)';
@@ -40,7 +43,9 @@ export default function AuthLayout() {
   if (!user) return null;
 
   return (
-    <Tabs
+    <WorkoutProvider>
+      <View style={{ flex: 1, backgroundColor: '#0D0D0F' }}>
+        <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -133,6 +138,10 @@ export default function AuthLayout() {
       <Tabs.Screen name="indian-foods" options={{ href: null }} />
       <Tabs.Screen name="shopping-list" options={{ href: null }} />
     </Tabs>
+        <ActiveWorkoutBanner />
+        <DailyWarningIntro onDone={() => {}} />
+      </View>
+    </WorkoutProvider>
   );
 }
 

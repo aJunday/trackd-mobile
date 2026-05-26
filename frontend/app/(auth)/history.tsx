@@ -184,14 +184,14 @@ export default function HistoryScreen() {
                         {getTotalSets(workout)} sets
                       </Text>
                     </View>
-                    {workout.duration_minutes && (
+                    {workout.duration_minutes ? (
                       <View style={styles.detailItem}>
                         <Ionicons name="time-outline" size={16} color="#666666" />
                         <Text style={styles.detailText}>
                           {workout.duration_minutes} min
                         </Text>
                       </View>
-                    )}
+                    ) : null}
                     <View style={styles.detailItem}>
                       <Ionicons name="trending-up-outline" size={16} color="#666666" />
                       <Text style={styles.detailText}>

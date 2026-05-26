@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -54,6 +56,7 @@ export default function KitchenScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [customWater, setCustomWater] = useState({ visible: false, value: '' });
 
   const apiHeaders = useCallback(
     () => ({
@@ -268,8 +271,68 @@ export default function KitchenScreen() {
                 <Text style={styles.waterBtnText}>+{ml}ml</Text>
               </TouchableOpacity>
             ))}
+            <TouchableOpacity
+              style={[styles.waterBtn, { backgroundColor: 'rgba(245,166,35,0.15)', borderColor: 'rgba(245,166,35,0.5)' }]}
+              onPress={() => setCustomWater({ visible: true, value: '' })}
+            >
+              <Ionicons name="create-outline" size={16} color={ACCENT} />
+            </TouchableOpacity>
           </View>
         </View>
+
+        {/* Custom water entry modal */}
+        <Modal
+          visible={customWater.visible}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setCustomWater({ visible: false, value: '' })}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: CARD, padding: 24, borderRadius: 16, width: '85%', borderWidth: 1, borderColor: BORDER }}>
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 8 }}>Custom water amount</Text>
+              <Text style={{ color: '#8E8E93', fontSize: 13, marginBottom: 16 }}>Enter milliliters (ml)</Text>
+              <TextInput
+                value={customWater.value}
+                onChangeText={(v) => setCustomWater((s) => ({ ...s, value: v.replace(/[^0-9]/g, '') }))}
+                keyboardType="number-pad"
+                placeholder="e.g. 350"
+                placeholderTextColor="#555"
+                style={{
+                  backgroundColor: '#0D0D0F',
+                  borderColor: BORDER,
+                  borderWidth: 1,
+                  color: '#fff',
+                  fontSize: 18,
+                  fontWeight: '700',
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  marginBottom: 16,
+                }}
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: '#1F1F22', paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+                  onPress={() => setCustomWater({ visible: false, value: '' })}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 2, backgroundColor: ACCENT, paddingVertical: 12, borderRadius: 10, alignItems: 'center', opacity: customWater.value ? 1 : 0.5 }}
+                  disabled={!customWater.value}
+                  onPress={() => {
+                    const n = parseInt(customWater.value || '0', 10);
+                    if (n > 0) addWater(n);
+                    setCustomWater({ visible: false, value: '' });
+                  }}
+                >
+                  <Text style={{ color: '#000', fontWeight: '800' }}>Add {customWater.value || 0} ml</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {/* Quick Actions */}
         <Text style={[styles.section, { marginTop: 24 }]}>Log a meal</Text>
