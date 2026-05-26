@@ -33,26 +33,47 @@ const TEXT_MUTED = '#888';
 const STORAGE_KEY = 'trackd.last_warning_date';
 
 const QUOTES: string[] = [
-  "The only bad workout is the one that didn't happen.",
-  "Strong is not a size. It's a decision.",
-  "Your body can do it. It's your mind you need to convince.",
-  'Every rep counts. Every meal matters.',
-  'Progress is progress no matter how small.',
-  'The pain you feel today is the strength you feel tomorrow.',
+  // David Goggins
+  'You are in danger of living a life so comfortable and soft that you will die without ever realizing your true potential.',
   "Don't stop when you're tired. Stop when you're done.",
-  'Discipline is choosing between what you want now and what you want most.',
-  "You don't have to be extreme. Just consistent.",
-  'Small daily improvements lead to stunning results.',
-  'The harder you work the better you feel.',
-  'Eat well. Train hard. Rest enough. Repeat.',
-  'Your future self is watching you right now.',
-  'Be stronger than your excuses.',
-  'One workout at a time. One meal at a time.',
-  "The gym is not a punishment. It's a privilege.",
-  'Sweat is just fat crying.',
-  'Results happen over time not overnight. Stay consistent.',
-  'The best investment you can make is in your own health.',
-  "Show up even when you don't feel like it. Especially then.",
+  'The most important conversation you will ever have is the one you have with yourself.',
+  'Suffering is the true test of life.',
+  'Nobody cares what you did yesterday. What have you done today?',
+  'We live in a world where mediocrity is rewarded and people are afraid to be great.',
+  "Motivation is crap. Motivation comes and goes. When you're driven whatever is in front of you will get destroyed.",
+
+  // Kobe Bryant
+  'Rest at the end not in the middle.',
+  'The moment you give up is the moment you let someone else win.',
+  'Great things come from hard work and perseverance. No excuses.',
+  'Everything negative — pressure, challenges — is all an opportunity for me to rise.',
+
+  // Muhammad Ali
+  "I hated every minute of training but I said don't quit. Suffer now and live the rest of your life as a champion.",
+  "It's the repetition of affirmations that leads to belief and once that belief becomes a deep conviction things begin to happen.",
+  "Don't count the days. Make the days count.",
+
+  // Arnold Schwarzenegger
+  'The last three or four reps is what makes the muscle grow. This area of pain divides a champion from someone who is not.',
+  'Strength does not come from winning. Your struggles develop your strengths.',
+  'You can have results or excuses. Not both.',
+
+  // Dwayne "The Rock" Johnson
+  "Success isn't always about greatness. It's about consistency. Consistent hard work leads to success. Greatness will come.",
+  'All successes begin with self discipline. It starts with you.',
+  'Blood sweat and respect. First two you give. Last one you earn.',
+
+  // Gen Z / internet fitness culture
+  "That person you want to be is on the other side of the workout you don't want to do.",
+  'Your future self will thank you for the reps you did today.',
+  'Main character energy means showing up for yourself every single day.',
+  'No off days. Just different intensity days.',
+  'The gym is the one place where showing up is already winning.',
+  'Body recomposition is a slow process and the people who succeed are those who are patient enough to trust it.',
+  'You are one workout away from a good mood.',
+  'Consistency over perfection. Always.',
+  'Being sore is just weakness leaving the body.',
+  'Train like the version of yourself you want to become.',
 ];
 
 function today(): string {
