@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 import { recommendSplit, getAllSplits, getDayName, DaysPerWeek, Goal } from '../../src/data/splits';
 import WeightLogSection from '../../src/components/WeightLogSection';
+import DayPicker from '../../src/components/DayPicker';
 
 const ACCENT_COLOR = '#F5A623';
 const GOLD = '#F5A623';
@@ -29,10 +30,20 @@ export default function ProfileScreen() {
     (user?.training_days_per_week as DaysPerWeek) || null
   );
   const [pickedSplit, setPickedSplit] = useState<string | null>(user?.split_id || null);
+  const [pickedDayIndices, setPickedDayIndices] = useState<number[] | null>(
+    (user?.training_day_indices as number[]) || null
+  );
 
   const saveSplit = async () => {
     if (!pickedDays || !pickedSplit) {
       Alert.alert('Pick both', 'Please select days/week and a split.');
+      return;
+    }
+    if (!pickedDayIndices || pickedDayIndices.length !== pickedDays) {
+      Alert.alert(
+        'Pick your training days',
+        `Tap exactly ${pickedDays} days to set your weekly schedule.`,
+      );
       return;
     }
     setSavingSplit(true);
@@ -45,6 +56,7 @@ export default function ProfileScreen() {
         },
         body: JSON.stringify({
           training_days_per_week: pickedDays,
+          training_day_indices: pickedDayIndices,
           split_id: pickedSplit,
         }),
       });
@@ -276,6 +288,7 @@ export default function ProfileScreen() {
                   style={[styles.spDayCard, pickedDays === d && styles.spDayCardActive]}
                   onPress={() => {
                     setPickedDays(d as DaysPerWeek);
+                    setPickedDayIndices(null);
                     if (user?.goal_type) {
                       const rec = recommendSplit(d as DaysPerWeek, user.goal_type as Goal);
                       setPickedSplit(rec.id);
@@ -301,7 +314,7 @@ export default function ProfileScreen() {
                         styles.spSplitCard,
                         pickedSplit === s.id && styles.spSplitCardActive,
                       ]}
-                      onPress={() => setPickedSplit(s.id)}
+                      onPress={() => { setPickedSplit(s.id); setPickedDayIndices(null); }}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Text style={styles.spSplitName}>{s.name}</Text>
@@ -334,6 +347,29 @@ export default function ProfileScreen() {
                 </View>
               );
             })()}
+
+            {pickedDays && pickedSplit && (() => {
+              const all = getAllSplits(pickedDays);
+              const chosen = all.find((s) => s.id === pickedSplit) || all[0];
+              const sessionLabels = chosen.schedule
+                .filter((d) => !d.is_rest)
+                .map((d) => d.template_name);
+              const defaultDays = chosen.schedule
+                .filter((d) => !d.is_rest)
+                .map((d) => d.day_of_week);
+              return (
+                <View style={{ marginTop: 18 }}>
+                  <DayPicker
+                    requiredCount={pickedDays}
+                    sessionLabels={sessionLabels}
+                    initialDays={pickedDayIndices ?? defaultDays}
+                    confirmLabel="Lock In Days"
+                    onConfirm={(days) => setPickedDayIndices(days)}
+                  />
+                </View>
+              );
+            })()}
+
 
             <TouchableOpacity
               style={[styles.spSaveBtn, (savingSplit || !pickedDays || !pickedSplit) && { opacity: 0.5 }]}

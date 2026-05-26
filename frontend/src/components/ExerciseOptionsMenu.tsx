@@ -38,6 +38,7 @@ export interface ExerciseOptionsCallbacks {
   onReplaceExercise?: () => void;
   onCreateSuperset?: () => void;
   onRemoveExercise?: () => void;
+  onWhyExercise?: () => void;
 }
 
 interface Props extends ExerciseOptionsCallbacks {
@@ -67,6 +68,7 @@ export default function ExerciseOptionsMenu({
   onReplaceExercise,
   onCreateSuperset,
   onRemoveExercise,
+  onWhyExercise,
 }: Props) {
   const [activeSub, setActiveSub] = useState<ActiveSub>(null);
   const [noteText, setNoteText] = useState(currentNote || '');
@@ -154,6 +156,18 @@ export default function ExerciseOptionsMenu({
           {/* MENU ROOT */}
           {activeSub === null && (
             <>
+              {onWhyExercise && (
+                <MenuRow
+                  icon={<MaterialCommunityIcons name="flask-outline" size={20} color={ACCENT} />}
+                  label="Why this exercise?"
+                  sub="See the research behind this pick"
+                  onPress={() => {
+                    haptic();
+                    onWhyExercise();
+                    close();
+                  }}
+                />
+              )}
               <MenuRow
                 icon={<MaterialCommunityIcons name="note-edit-outline" size={20} color={ACCENT} />}
                 label="Add Note"

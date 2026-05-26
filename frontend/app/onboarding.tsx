@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useAuth } from './_layout';
 import { recommendSplit, getAllSplits, getDayName, DaysPerWeek, Goal } from '../src/data/splits';
+import DayPicker from '../src/components/DayPicker';
 
 const ACCENT = '#F5A623';
 const CARD_BG = '#161618';
@@ -67,9 +68,10 @@ export default function OnboardingScreen() {
   const [goal, setGoal] = useState<string | null>(null);
   const [daysPerWeek, setDaysPerWeek] = useState<2 | 3 | 4 | 5 | 6 | null>(null);
   const [splitId, setSplitId] = useState<string | null>(null);
+  const [trainingDayIndices, setTrainingDayIndices] = useState<number[] | null>(null);
   const [sport, setSport] = useState<string | null>(null);
 
-  const totalSteps = 5;
+  const totalSteps = 6;
   const progress = useRef(new Animated.Value(0)).current;
 
   const animateProgress = (toStep: number) => {
@@ -93,7 +95,8 @@ export default function OnboardingScreen() {
     if (step === 1) return !!activity;
     if (step === 2) return !!goal;
     if (step === 3) return !!daysPerWeek && !!splitId;
-    if (step === 4) return !!sport;
+    if (step === 4) return !!trainingDayIndices && !!daysPerWeek && trainingDayIndices.length === daysPerWeek;
+    if (step === 5) return !!sport;
     return false;
   };
 
@@ -155,6 +158,7 @@ export default function OnboardingScreen() {
           goal_type: goal,
           sport,
           training_days_per_week: daysPerWeek,
+          training_day_indices: trainingDayIndices,
           split_id: splitId,
         }),
       });
@@ -354,6 +358,7 @@ export default function OnboardingScreen() {
                     style={[styles.dayCard, daysPerWeek === d && styles.dayCardActive]}
                     onPress={() => {
                       setDaysPerWeek(d as DaysPerWeek);
+                      setTrainingDayIndices(null);
                       // auto-pick recommended split
                       if (goal) {
                         const rec = recommendSplit(d as DaysPerWeek, goal as Goal);
@@ -385,7 +390,7 @@ export default function OnboardingScreen() {
                           splitId === s.id && styles.splitCardActive,
                           s.id === recommended.id && styles.splitCardRecommended,
                         ]}
-                        onPress={() => { setSplitId(s.id); haptic(); }}
+                        onPress={() => { setSplitId(s.id); setTrainingDayIndices(null); haptic(); }}
                       >
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Text style={styles.splitName}>{s.name}</Text>
@@ -421,7 +426,43 @@ export default function OnboardingScreen() {
             </View>
           )}
 
-          {step === 4 && (
+          {step === 4 && (() => {
+            // Selected split → derive session labels (non-rest days in calendar order)
+            const allCandidates = daysPerWeek ? getAllSplits(daysPerWeek) : [];
+            const chosen = allCandidates.find((s) => s.id === splitId) || allCandidates[0];
+            const sessionLabels = chosen
+              ? chosen.schedule.filter((d) => !d.is_rest).map((d) => d.template_name)
+              : [];
+            const defaultDays = chosen
+              ? chosen.schedule.filter((d) => !d.is_rest).map((d) => d.day_of_week)
+              : [];
+            return (
+              <View>
+                <Text style={styles.title}>Choose your training days</Text>
+                <Text style={styles.subtitle}>
+                  We&apos;ve picked Mon–Wed–Fri by default. Tap days that match your real schedule.
+                </Text>
+                <DayPicker
+                  requiredCount={daysPerWeek || 3}
+                  sessionLabels={sessionLabels.length > 0 ? sessionLabels : ['Workout']}
+                  initialDays={trainingDayIndices ?? defaultDays}
+                  confirmLabel="Save Schedule"
+                  onConfirm={(days) => {
+                    setTrainingDayIndices(days);
+                    haptic();
+                  }}
+                />
+                {trainingDayIndices && trainingDayIndices.length === daysPerWeek && (
+                  <View style={styles.savedRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#2ECC71" />
+                    <Text style={styles.savedText}>Schedule locked in — tap Continue below.</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
+
+          {step === 5 && (
             <View>
               <Text style={styles.title}>Pick your sport</Text>
               <Text style={styles.subtitle}>
@@ -694,4 +735,12 @@ const styles = StyleSheet.create({
   },
   ctaDisabled: { opacity: 0.4 },
   ctaText: { color: '#000', fontSize: 16, fontWeight: '700' },
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingHorizontal: 4,
+  },
+  savedText: { color: '#2ECC71', fontSize: 13, fontWeight: '700' },
 });

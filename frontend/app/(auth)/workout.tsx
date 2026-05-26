@@ -28,6 +28,7 @@ import { authFetch } from '../../src/utils/authFetch';
 import ExerciseQuickDetail from '../../src/components/ExerciseQuickDetail';
 import ExerciseOptionsMenu from '../../src/components/ExerciseOptionsMenu';
 import { TEMPLATE_RESEARCH } from '../../src/data/research';
+import { getExerciseCitation, isSportProgram } from '../../src/data/exerciseScience';
 import { Storage } from '../../src/utils/storage';
 import { useActiveWorkout } from '../../src/context/WorkoutContext';
 
@@ -149,6 +150,7 @@ export default function WorkoutScreen() {
 
   const [active, setActive] = useState<ActiveWorkout | null>(null);
   const [invalidSet, setInvalidSet] = useState<{ eid: string; sid: string; msg: string } | null>(null);
+  const [whyExercise, setWhyExercise] = useState<{ name: string } | null>(null);
   const { startSession: startGlobalWorkout, endSession: endGlobalWorkout } = useActiveWorkout();
 
   // Sync local workout state ↔ global context so the floating banner can show
@@ -1185,6 +1187,11 @@ export default function WorkoutScreen() {
                   ),
                 });
               }}
+              onWhyExercise={
+                isSportProgram(programContext?.program)
+                  ? () => setWhyExercise({ name: ex.exercise_name })
+                  : undefined
+              }
             />
           ))}
 
@@ -1225,10 +1232,142 @@ export default function WorkoutScreen() {
           weight={showPlateCalc.weight}
           onClose={() => setShowPlateCalc({ open: false, weight: 100 })}
         />
+        <WhyExerciseModal
+          visible={!!whyExercise}
+          exerciseName={whyExercise?.name || ''}
+          programId={programContext?.program}
+          onClose={() => setWhyExercise(null)}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+// ============== WHY THIS EXERCISE? ==============
+function WhyExerciseModal({
+  visible,
+  exerciseName,
+  programId,
+  onClose,
+}: {
+  visible: boolean;
+  exerciseName: string;
+  programId?: string | null;
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+  const { citation } = getExerciseCitation(exerciseName, programId);
+  // Split "Authors year — plain language" into source + reason
+  const dashIdx = citation.indexOf(' — ');
+  const source = dashIdx >= 0 ? citation.slice(0, dashIdx) : citation;
+  const reason = dashIdx >= 0 ? citation.slice(dashIdx + 3) : '';
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={whyStyles.backdrop}>
+        <TouchableOpacity activeOpacity={1} style={whyStyles.backdropTouch} onPress={onClose} />
+        <View style={whyStyles.sheet}>
+          <View style={whyStyles.handle} />
+          <View style={whyStyles.header}>
+            <View style={whyStyles.iconBox}>
+              <MaterialCommunityIcons name="flask-outline" size={20} color={ACCENT} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={whyStyles.kicker}>WHY THIS EXERCISE?</Text>
+              <Text style={whyStyles.title} numberOfLines={2}>
+                {exerciseName}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={22} color="#888" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={whyStyles.card}>
+            <Text style={whyStyles.sourceLabel}>RESEARCH SOURCE</Text>
+            <Text style={whyStyles.source}>{source}</Text>
+            {!!reason && (
+              <>
+                <View style={whyStyles.divider} />
+                <Text style={whyStyles.reasonLabel}>WHY IT MATTERS FOR YOUR SPORT</Text>
+                <Text style={whyStyles.reason}>{reason}</Text>
+              </>
+            )}
+          </View>
+
+          <TouchableOpacity style={whyStyles.gotItBtn} onPress={onClose} activeOpacity={0.85}>
+            <Text style={whyStyles.gotItText}>Got it</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const whyStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  backdropTouch: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  sheet: {
+    backgroundColor: BG,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 22,
+    borderTopWidth: 1,
+    borderColor: BORDER,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#333',
+    marginBottom: 14,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  iconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: 'rgba(245,166,35,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kicker: { color: ACCENT, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  title: { color: '#FFFFFF', fontSize: 17, fontWeight: '800', marginTop: 2 },
+  card: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  sourceLabel: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginBottom: 6,
+  },
+  source: { color: ACCENT, fontSize: 13, fontWeight: '700', lineHeight: 19 },
+  divider: { height: 1, backgroundColor: '#222', marginVertical: 12 },
+  reasonLabel: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginBottom: 6,
+  },
+  reason: { color: '#FFFFFF', fontSize: 14, lineHeight: 21, fontWeight: '500' },
+  gotItBtn: {
+    backgroundColor: ACCENT,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  gotItText: { color: '#000', fontWeight: '800', fontSize: 15 },
+});
 
 // ============== PULSING TIMER ==============
 function PulsingTimer({ elapsedMs, completedSets, totalSets, totalVolume }: { elapsedMs: number; completedSets: number; totalSets: number; totalVolume: number }) {
@@ -1266,6 +1405,7 @@ function ExerciseCard({
   onUpdateRestTimer,
   onReplaceExercise,
   onCreateSuperset,
+  onWhyExercise,
   invalidSetId,
   invalidSetMsg,
 }: {
@@ -1282,6 +1422,7 @@ function ExerciseCard({
   onUpdateRestTimer?: (seconds: number) => void;
   onReplaceExercise?: () => void;
   onCreateSuperset?: () => void;
+  onWhyExercise?: () => void;
   invalidSetId?: string | null;
   invalidSetMsg?: string | null;
 }) {
@@ -1441,6 +1582,7 @@ function ExerciseCard({
         onReplaceExercise={onReplaceExercise}
         onCreateSuperset={onCreateSuperset}
         onRemoveExercise={onRemove}
+        onWhyExercise={onWhyExercise}
       />
     </View>
   );

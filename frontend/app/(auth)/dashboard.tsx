@@ -68,10 +68,25 @@ export default function Dashboard() {
     const days = (user as any)?.training_days_per_week as DaysPerWeek | undefined;
     const goal = (user as any)?.goal_type as Goal | undefined;
     const splitId = (user as any)?.split_id as string | undefined;
+    const customDays = (user as any)?.training_day_indices as number[] | undefined;
     if (!days || !goal) return null;
     const all = getAllSplits(days);
     const chosen = splitId ? all.find((s) => s.id === splitId) : null;
-    return chosen || recommendSplit(days, goal);
+    const base = chosen || recommendSplit(days, goal);
+    // If user picked custom day indices, remap the active-session days
+    if (customDays && customDays.length > 0) {
+      const sessions = base.schedule.filter((d) => !d.is_rest);
+      const sortedDays = [...customDays].sort((a, b) => a - b);
+      const newSchedule = [0, 1, 2, 3, 4, 5, 6].map((dow) => {
+        const idx = sortedDays.indexOf(dow);
+        if (idx >= 0 && sessions[idx]) {
+          return { ...sessions[idx], day_of_week: dow, is_rest: false };
+        }
+        return { day_of_week: dow, template_id: 'rest', template_name: 'Rest', is_rest: true };
+      });
+      return { ...base, schedule: newSchedule };
+    }
+    return base;
   })();
 
   const todayPlan = userSplit ? getTodayWorkout(userSplit) : null;

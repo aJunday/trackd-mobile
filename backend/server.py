@@ -88,6 +88,7 @@ class OnboardingData(BaseModel):
     goal_type: str
     sport: Optional[str] = None
     training_days_per_week: Optional[int] = None  # 2-6
+    training_day_indices: Optional[List[int]] = None  # 0=Mon..6=Sun
     split_id: Optional[str] = None  # e.g. 'upper_lower_4', 'ppl_3'
 
 class BodyMeasurement(BaseModel):
@@ -675,6 +676,7 @@ async def update_user_goals(
 
 class SplitUpdateRequest(BaseModel):
     training_days_per_week: Optional[int] = None
+    training_day_indices: Optional[List[int]] = None
     split_id: Optional[str] = None
 
 @user_router.put("/split")
@@ -2312,6 +2314,8 @@ async def complete_onboarding(
     # Only set training schedule fields if explicitly provided (preserves existing values otherwise)
     if data.training_days_per_week is not None:
         update_data["training_days_per_week"] = data.training_days_per_week
+    if data.training_day_indices is not None:
+        update_data["training_day_indices"] = data.training_day_indices
     if data.split_id is not None:
         update_data["split_id"] = data.split_id
     
