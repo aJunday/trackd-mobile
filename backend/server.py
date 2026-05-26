@@ -64,6 +64,7 @@ class User(BaseModel):
     goal_type: Optional[str] = None  # lose_fat, maintain, build_muscle
     sport: Optional[str] = None
     training_days_per_week: Optional[int] = None  # 2-6
+    training_day_indices: Optional[List[int]] = None  # 0=Mon..6=Sun, list of training days
     split_id: Optional[str] = None  # e.g. 'upper_lower_4', 'ppl_3'
     bmr: Optional[float] = None
     tdee: Optional[float] = None
