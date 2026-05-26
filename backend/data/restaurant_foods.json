@@ -188,6 +188,195 @@
         {"id": "PAN011", "name": "Cinnamon Crunch Bagel", "size": "1 bagel (113g)", "calories": 410, "protein_g": 11, "carb_g": 79, "fat_g": 6, "sugar_g": 22, "sodium_mg": 410, "serving_g": 113, "aliases": ["cinnamon crunch bagel", "panera bagel"]},
         {"id": "PAN012", "name": "Cheese Danish", "size": "1 danish (105g)", "calories": 380, "protein_g": 7, "carb_g": 43, "fat_g": 20, "sugar_g": 18, "sodium_mg": 290, "serving_g": 105, "aliases": ["cheese danish", "panera danish"]}
       ]
+    },
+    {
+      "restaurant": "Wendy's",
+      "source_url": "https://www.wendys.com/nutrition",
+      "items": [
+        {"id": "WEN001", "name": "Dave's Single", "size": "1 burger (255g)", "calories": 580, "protein_g": 30, "carb_g": 39, "fat_g": 34, "sugar_g": 9, "sodium_mg": 1130, "serving_g": 255, "aliases": ["daves single", "wendys single", "single burger wendys"]},
+        {"id": "WEN002", "name": "Dave's Double", "size": "1 burger (354g)", "calories": 820, "protein_g": 50, "carb_g": 40, "fat_g": 51, "sugar_g": 9, "sodium_mg": 1410, "serving_g": 354, "aliases": ["daves double", "wendys double"]},
+        {"id": "WEN003", "name": "Baconator", "size": "1 burger (337g)", "calories": 960, "protein_g": 60, "carb_g": 40, "fat_g": 63, "sugar_g": 10, "sodium_mg": 1810, "serving_g": 337, "aliases": ["baconator"]},
+        {"id": "WEN004", "name": "Jr. Cheeseburger", "size": "1 burger (132g)", "calories": 290, "protein_g": 15, "carb_g": 27, "fat_g": 13, "sugar_g": 6, "sodium_mg": 580, "serving_g": 132, "aliases": ["wendys jr cheeseburger", "junior cheeseburger"]},
+        {"id": "WEN005", "name": "Spicy Chicken Sandwich", "size": "1 sandwich (225g)", "calories": 510, "protein_g": 29, "carb_g": 51, "fat_g": 20, "sugar_g": 7, "sodium_mg": 1480, "serving_g": 225, "aliases": ["wendys spicy chicken", "spicy chicken sandwich wendys"]},
+        {"id": "WEN006", "name": "Grilled Chicken Sandwich", "size": "1 sandwich (231g)", "calories": 370, "protein_g": 36, "carb_g": 38, "fat_g": 8, "sugar_g": 11, "sodium_mg": 980, "serving_g": 231, "aliases": ["wendys grilled chicken"]},
+        {"id": "WEN007", "name": "10 pc Chicken Nuggets", "size": "10 pieces (149g)", "calories": 410, "protein_g": 26, "carb_g": 24, "fat_g": 23, "sugar_g": 0, "sodium_mg": 980, "serving_g": 149, "aliases": ["wendys nuggets", "10 pc nuggets wendys"]},
+        {"id": "WEN008", "name": "Spicy Nuggets (10 pc)", "size": "10 pieces (149g)", "calories": 440, "protein_g": 24, "carb_g": 27, "fat_g": 26, "sugar_g": 0, "sodium_mg": 1090, "serving_g": 149, "aliases": ["spicy nuggets wendys"]},
+        {"id": "WEN009", "name": "Natural-Cut Fries (Medium)", "size": "Medium (142g)", "calories": 420, "protein_g": 5, "carb_g": 55, "fat_g": 20, "sugar_g": 1, "sodium_mg": 470, "serving_g": 142, "aliases": ["wendys fries", "natural cut fries"]},
+        {"id": "WEN010", "name": "Baconator Fries", "size": "1 serving (227g)", "calories": 540, "protein_g": 17, "carb_g": 54, "fat_g": 30, "sugar_g": 2, "sodium_mg": 1280, "serving_g": 227, "aliases": ["baconator fries"]},
+        {"id": "WEN011", "name": "Chili (Small)", "size": "Small (227g)", "calories": 240, "protein_g": 18, "carb_g": 23, "fat_g": 8, "sugar_g": 6, "sodium_mg": 830, "serving_g": 227, "aliases": ["wendys chili", "chili small"]},
+        {"id": "WEN012", "name": "Frosty (Chocolate, Small)", "size": "Small (227g)", "calories": 340, "protein_g": 8, "carb_g": 56, "fat_g": 9, "sugar_g": 45, "sodium_mg": 160, "serving_g": 227, "aliases": ["frosty", "wendys frosty", "chocolate frosty"]},
+        {"id": "WEN013", "name": "Vanilla Frosty (Small)", "size": "Small (227g)", "calories": 320, "protein_g": 8, "carb_g": 52, "fat_g": 8, "sugar_g": 42, "sodium_mg": 150, "serving_g": 227, "aliases": ["vanilla frosty"]},
+        {"id": "WEN014", "name": "Apple Pecan Salad with Chicken", "size": "1 salad (363g)", "calories": 540, "protein_g": 38, "carb_g": 38, "fat_g": 27, "sugar_g": 26, "sodium_mg": 1170, "serving_g": 363, "aliases": ["apple pecan salad", "wendys salad"]},
+        {"id": "WEN015", "name": "Asiago Ranch Club", "size": "1 sandwich (281g)", "calories": 670, "protein_g": 39, "carb_g": 56, "fat_g": 33, "sugar_g": 11, "sodium_mg": 1700, "serving_g": 281, "aliases": ["asiago ranch club"]}
+      ]
+    },
+    {
+      "restaurant": "KFC",
+      "source_url": "https://www.kfc.com/nutrition",
+      "items": [
+        {"id": "KFC001", "name": "Original Recipe Chicken Breast", "size": "1 breast (161g)", "calories": 390, "protein_g": 39, "carb_g": 11, "fat_g": 21, "sugar_g": 0, "sodium_mg": 1190, "serving_g": 161, "aliases": ["kfc breast", "original recipe breast", "kfc chicken breast"]},
+        {"id": "KFC002", "name": "Original Recipe Chicken Thigh", "size": "1 thigh (114g)", "calories": 290, "protein_g": 18, "carb_g": 8, "fat_g": 20, "sugar_g": 0, "sodium_mg": 790, "serving_g": 114, "aliases": ["kfc thigh", "original recipe thigh"]},
+        {"id": "KFC003", "name": "Original Recipe Drumstick", "size": "1 drumstick (60g)", "calories": 130, "protein_g": 12, "carb_g": 4, "fat_g": 8, "sugar_g": 0, "sodium_mg": 340, "serving_g": 60, "aliases": ["kfc drumstick"]},
+        {"id": "KFC004", "name": "Extra Crispy Chicken Breast", "size": "1 breast (171g)", "calories": 530, "protein_g": 35, "carb_g": 18, "fat_g": 35, "sugar_g": 0, "sodium_mg": 1150, "serving_g": 171, "aliases": ["extra crispy breast", "kfc extra crispy"]},
+        {"id": "KFC005", "name": "Chicken Tenders (3 pc)", "size": "3 tenders (135g)", "calories": 360, "protein_g": 32, "carb_g": 19, "fat_g": 17, "sugar_g": 0, "sodium_mg": 1080, "serving_g": 135, "aliases": ["kfc tenders", "chicken tenders kfc"]},
+        {"id": "KFC006", "name": "Nashville Hot Chicken Tenders (3 pc)", "size": "3 tenders (135g)", "calories": 470, "protein_g": 31, "carb_g": 25, "fat_g": 27, "sugar_g": 0, "sodium_mg": 1290, "serving_g": 135, "aliases": ["nashville hot tenders", "spicy tenders kfc"]},
+        {"id": "KFC007", "name": "Famous Bowl (Mashed Potato Bowl)", "size": "1 bowl (482g)", "calories": 710, "protein_g": 26, "carb_g": 78, "fat_g": 33, "sugar_g": 2, "sodium_mg": 2330, "serving_g": 482, "aliases": ["famous bowl", "kfc bowl", "mashed potato bowl"]},
+        {"id": "KFC008", "name": "Mashed Potatoes with Gravy (Individual)", "size": "Individual (138g)", "calories": 120, "protein_g": 3, "carb_g": 19, "fat_g": 4, "sugar_g": 0, "sodium_mg": 530, "serving_g": 138, "aliases": ["mashed potatoes", "kfc mashed", "potato gravy"]},
+        {"id": "KFC009", "name": "Cole Slaw (Individual)", "size": "Individual (130g)", "calories": 170, "protein_g": 1, "carb_g": 21, "fat_g": 9, "sugar_g": 18, "sodium_mg": 240, "serving_g": 130, "aliases": ["kfc coleslaw", "cole slaw"]},
+        {"id": "KFC010", "name": "Mac & Cheese (Individual)", "size": "Individual (123g)", "calories": 160, "protein_g": 7, "carb_g": 19, "fat_g": 6, "sugar_g": 2, "sodium_mg": 580, "serving_g": 123, "aliases": ["kfc mac and cheese", "mac cheese kfc"]},
+        {"id": "KFC011", "name": "Biscuit", "size": "1 biscuit (60g)", "calories": 180, "protein_g": 4, "carb_g": 23, "fat_g": 8, "sugar_g": 1, "sodium_mg": 510, "serving_g": 60, "aliases": ["kfc biscuit"]},
+        {"id": "KFC012", "name": "Popcorn Nuggets (Individual)", "size": "Individual (113g)", "calories": 290, "protein_g": 19, "carb_g": 19, "fat_g": 16, "sugar_g": 0, "sodium_mg": 850, "serving_g": 113, "aliases": ["popcorn nuggets", "kfc popcorn chicken"]},
+        {"id": "KFC013", "name": "Chicken Pot Pie", "size": "1 pie (411g)", "calories": 720, "protein_g": 27, "carb_g": 68, "fat_g": 38, "sugar_g": 3, "sodium_mg": 1820, "serving_g": 411, "aliases": ["kfc pot pie", "chicken pot pie"]},
+        {"id": "KFC014", "name": "Classic Chicken Sandwich", "size": "1 sandwich (213g)", "calories": 620, "protein_g": 27, "carb_g": 47, "fat_g": 36, "sugar_g": 6, "sodium_mg": 1410, "serving_g": 213, "aliases": ["kfc chicken sandwich", "classic chicken sandwich"]},
+        {"id": "KFC015", "name": "Spicy Chicken Sandwich", "size": "1 sandwich (213g)", "calories": 620, "protein_g": 27, "carb_g": 47, "fat_g": 36, "sugar_g": 6, "sodium_mg": 1530, "serving_g": 213, "aliases": ["kfc spicy chicken sandwich"]}
+      ]
+    },
+    {
+      "restaurant": "Five Guys",
+      "source_url": "https://www.fiveguys.com/allergy-info",
+      "items": [
+        {"id": "FG001", "name": "Hamburger (Regular)", "size": "1 burger (303g)", "calories": 700, "protein_g": 39, "carb_g": 39, "fat_g": 43, "sugar_g": 8, "sodium_mg": 430, "serving_g": 303, "aliases": ["five guys hamburger", "fg burger", "regular hamburger five guys"]},
+        {"id": "FG002", "name": "Cheeseburger", "size": "1 burger (329g)", "calories": 840, "protein_g": 47, "carb_g": 40, "fat_g": 55, "sugar_g": 9, "sodium_mg": 1050, "serving_g": 329, "aliases": ["five guys cheeseburger", "fg cheeseburger"]},
+        {"id": "FG003", "name": "Bacon Cheeseburger", "size": "1 burger (343g)", "calories": 920, "protein_g": 51, "carb_g": 40, "fat_g": 62, "sugar_g": 9, "sodium_mg": 1310, "serving_g": 343, "aliases": ["bacon cheeseburger five guys"]},
+        {"id": "FG004", "name": "Little Hamburger", "size": "1 burger (240g)", "calories": 480, "protein_g": 22, "carb_g": 39, "fat_g": 26, "sugar_g": 8, "sodium_mg": 380, "serving_g": 240, "aliases": ["little hamburger", "five guys little burger"]},
+        {"id": "FG005", "name": "Little Cheeseburger", "size": "1 burger (253g)", "calories": 550, "protein_g": 25, "carb_g": 39, "fat_g": 32, "sugar_g": 9, "sodium_mg": 690, "serving_g": 253, "aliases": ["little cheeseburger five guys"]},
+        {"id": "FG006", "name": "Hot Dog", "size": "1 hot dog (159g)", "calories": 545, "protein_g": 20, "carb_g": 40, "fat_g": 32, "sugar_g": 6, "sodium_mg": 1130, "serving_g": 159, "aliases": ["five guys hot dog", "fg hot dog"]},
+        {"id": "FG007", "name": "Cheese Dog", "size": "1 hot dog (185g)", "calories": 615, "protein_g": 24, "carb_g": 41, "fat_g": 38, "sugar_g": 7, "sodium_mg": 1480, "serving_g": 185, "aliases": ["five guys cheese dog", "fg cheese dog"]},
+        {"id": "FG008", "name": "Bacon Dog", "size": "1 hot dog (172g)", "calories": 625, "protein_g": 24, "carb_g": 40, "fat_g": 39, "sugar_g": 6, "sodium_mg": 1390, "serving_g": 172, "aliases": ["bacon dog"]},
+        {"id": "FG009", "name": "Veggie Sandwich", "size": "1 sandwich (165g)", "calories": 440, "protein_g": 9, "carb_g": 60, "fat_g": 15, "sugar_g": 10, "sodium_mg": 340, "serving_g": 165, "aliases": ["five guys veggie sandwich", "fg veggie"]},
+        {"id": "FG010", "name": "Grilled Cheese", "size": "1 sandwich (108g)", "calories": 470, "protein_g": 16, "carb_g": 40, "fat_g": 26, "sugar_g": 7, "sodium_mg": 720, "serving_g": 108, "aliases": ["five guys grilled cheese"]},
+        {"id": "FG011", "name": "Cajun Fries (Regular)", "size": "Regular (227g)", "calories": 950, "protein_g": 15, "carb_g": 119, "fat_g": 48, "sugar_g": 0, "sodium_mg": 1610, "serving_g": 227, "aliases": ["cajun fries", "five guys cajun fries"]},
+        {"id": "FG012", "name": "Five Guys Style Fries (Regular)", "size": "Regular (227g)", "calories": 920, "protein_g": 14, "carb_g": 119, "fat_g": 45, "sugar_g": 0, "sodium_mg": 420, "serving_g": 227, "aliases": ["five guys fries", "regular fries five guys"]},
+        {"id": "FG013", "name": "Little Fries", "size": "Little (128g)", "calories": 530, "protein_g": 8, "carb_g": 68, "fat_g": 26, "sugar_g": 0, "sodium_mg": 240, "serving_g": 128, "aliases": ["little fries five guys"]},
+        {"id": "FG014", "name": "Vanilla Milkshake", "size": "1 shake (~24oz)", "calories": 670, "protein_g": 12, "carb_g": 87, "fat_g": 31, "sugar_g": 75, "sodium_mg": 270, "serving_g": 680, "aliases": ["five guys milkshake", "vanilla shake five guys"]},
+        {"id": "FG015", "name": "Bacon Burger", "size": "1 burger (317g)", "calories": 780, "protein_g": 43, "carb_g": 39, "fat_g": 50, "sugar_g": 8, "sodium_mg": 690, "serving_g": 317, "aliases": ["bacon burger five guys"]}
+      ]
+    },
+    {
+      "restaurant": "Panda Express",
+      "source_url": "https://www.pandaexpress.com/nutrition",
+      "items": [
+        {"id": "PE001", "name": "Orange Chicken", "size": "5.7 oz (162g)", "calories": 510, "protein_g": 25, "carb_g": 51, "fat_g": 23, "sugar_g": 19, "sodium_mg": 850, "serving_g": 162, "aliases": ["orange chicken", "panda orange chicken"]},
+        {"id": "PE002", "name": "Beijing Beef", "size": "5.7 oz (162g)", "calories": 480, "protein_g": 14, "carb_g": 46, "fat_g": 27, "sugar_g": 23, "sodium_mg": 660, "serving_g": 162, "aliases": ["beijing beef"]},
+        {"id": "PE003", "name": "Kung Pao Chicken", "size": "5.7 oz (162g)", "calories": 290, "protein_g": 16, "carb_g": 14, "fat_g": 19, "sugar_g": 7, "sodium_mg": 970, "serving_g": 162, "aliases": ["panda kung pao chicken", "kung pao chicken panda"]},
+        {"id": "PE004", "name": "Broccoli Beef", "size": "5.6 oz (159g)", "calories": 150, "protein_g": 9, "carb_g": 13, "fat_g": 7, "sugar_g": 7, "sodium_mg": 520, "serving_g": 159, "aliases": ["broccoli beef panda"]},
+        {"id": "PE005", "name": "Honey Walnut Shrimp", "size": "3.7 oz (104g)", "calories": 360, "protein_g": 14, "carb_g": 35, "fat_g": 19, "sugar_g": 8, "sodium_mg": 510, "serving_g": 104, "aliases": ["honey walnut shrimp"]},
+        {"id": "PE006", "name": "String Bean Chicken Breast", "size": "5.6 oz (159g)", "calories": 190, "protein_g": 14, "carb_g": 12, "fat_g": 9, "sugar_g": 6, "sodium_mg": 660, "serving_g": 159, "aliases": ["string bean chicken"]},
+        {"id": "PE007", "name": "Mushroom Chicken", "size": "5.7 oz (162g)", "calories": 180, "protein_g": 14, "carb_g": 10, "fat_g": 9, "sugar_g": 5, "sodium_mg": 720, "serving_g": 162, "aliases": ["mushroom chicken panda"]},
+        {"id": "PE008", "name": "Black Pepper Chicken", "size": "5.6 oz (159g)", "calories": 200, "protein_g": 13, "carb_g": 13, "fat_g": 10, "sugar_g": 8, "sodium_mg": 1080, "serving_g": 159, "aliases": ["black pepper chicken"]},
+        {"id": "PE009", "name": "Sweetfire Chicken Breast", "size": "5.7 oz (162g)", "calories": 380, "protein_g": 14, "carb_g": 50, "fat_g": 13, "sugar_g": 25, "sodium_mg": 350, "serving_g": 162, "aliases": ["sweetfire chicken"]},
+        {"id": "PE010", "name": "Chow Mein", "size": "9.4 oz (267g)", "calories": 510, "protein_g": 13, "carb_g": 80, "fat_g": 20, "sugar_g": 9, "sodium_mg": 980, "serving_g": 267, "aliases": ["panda chow mein", "chow mein panda"]},
+        {"id": "PE011", "name": "Fried Rice", "size": "9.3 oz (264g)", "calories": 520, "protein_g": 11, "carb_g": 85, "fat_g": 16, "sugar_g": 3, "sodium_mg": 850, "serving_g": 264, "aliases": ["panda fried rice"]},
+        {"id": "PE012", "name": "White Steamed Rice", "size": "8.6 oz (244g)", "calories": 380, "protein_g": 7, "carb_g": 87, "fat_g": 0, "sugar_g": 0, "sodium_mg": 0, "serving_g": 244, "aliases": ["white rice panda", "steamed rice panda express"]},
+        {"id": "PE013", "name": "Super Greens", "size": "7 oz (199g)", "calories": 90, "protein_g": 6, "carb_g": 10, "fat_g": 3, "sugar_g": 3, "sodium_mg": 220, "serving_g": 199, "aliases": ["super greens", "panda super greens"]},
+        {"id": "PE014", "name": "Cream Cheese Rangoon (3 pc)", "size": "3 pieces (51g)", "calories": 190, "protein_g": 5, "carb_g": 24, "fat_g": 8, "sugar_g": 4, "sodium_mg": 290, "serving_g": 51, "aliases": ["cream cheese rangoon", "rangoon"]},
+        {"id": "PE015", "name": "Veggie Spring Rolls (2 pc)", "size": "2 pieces (88g)", "calories": 240, "protein_g": 5, "carb_g": 24, "fat_g": 14, "sugar_g": 4, "sodium_mg": 540, "serving_g": 88, "aliases": ["veggie spring rolls", "panda spring rolls"]}
+      ]
+    },
+    {
+      "restaurant": "Popeyes",
+      "source_url": "https://www.popeyes.com/nutrition",
+      "items": [
+        {"id": "POP001", "name": "Chicken Sandwich (Classic)", "size": "1 sandwich (250g)", "calories": 700, "protein_g": 28, "carb_g": 50, "fat_g": 42, "sugar_g": 8, "sodium_mg": 1443, "serving_g": 250, "aliases": ["popeyes chicken sandwich", "classic chicken sandwich popeyes"]},
+        {"id": "POP002", "name": "Spicy Chicken Sandwich", "size": "1 sandwich (250g)", "calories": 700, "protein_g": 28, "carb_g": 50, "fat_g": 42, "sugar_g": 8, "sodium_mg": 1635, "serving_g": 250, "aliases": ["popeyes spicy chicken sandwich", "spicy chicken sandwich popeyes"]},
+        {"id": "POP003", "name": "Mild Breast (Bone-In)", "size": "1 breast (216g)", "calories": 380, "protein_g": 38, "carb_g": 16, "fat_g": 20, "sugar_g": 0, "sodium_mg": 1050, "serving_g": 216, "aliases": ["popeyes mild breast", "bone-in chicken breast"]},
+        {"id": "POP004", "name": "Spicy Breast (Bone-In)", "size": "1 breast (216g)", "calories": 360, "protein_g": 36, "carb_g": 13, "fat_g": 18, "sugar_g": 0, "sodium_mg": 1290, "serving_g": 216, "aliases": ["popeyes spicy breast", "spicy bone in breast"]},
+        {"id": "POP005", "name": "Chicken Tenders (3 pc, Mild)", "size": "3 tenders (193g)", "calories": 460, "protein_g": 35, "carb_g": 24, "fat_g": 24, "sugar_g": 1, "sodium_mg": 1390, "serving_g": 193, "aliases": ["popeyes tenders", "mild tenders popeyes"]},
+        {"id": "POP006", "name": "Chicken Wings (6 pc, Classic)", "size": "6 pieces (179g)", "calories": 580, "protein_g": 27, "carb_g": 27, "fat_g": 40, "sugar_g": 1, "sodium_mg": 1430, "serving_g": 179, "aliases": ["popeyes wings", "chicken wings popeyes"]},
+        {"id": "POP007", "name": "Cajun Fries (Regular)", "size": "Regular (104g)", "calories": 310, "protein_g": 3, "carb_g": 35, "fat_g": 17, "sugar_g": 0, "sodium_mg": 970, "serving_g": 104, "aliases": ["popeyes cajun fries", "cajun fries popeyes"]},
+        {"id": "POP008", "name": "Mashed Potatoes with Cajun Gravy", "size": "Regular (134g)", "calories": 130, "protein_g": 3, "carb_g": 18, "fat_g": 5, "sugar_g": 2, "sodium_mg": 510, "serving_g": 134, "aliases": ["popeyes mashed potatoes"]},
+        {"id": "POP009", "name": "Red Beans & Rice (Regular)", "size": "Regular (170g)", "calories": 230, "protein_g": 8, "carb_g": 32, "fat_g": 8, "sugar_g": 1, "sodium_mg": 740, "serving_g": 170, "aliases": ["red beans and rice", "popeyes beans rice"]},
+        {"id": "POP010", "name": "Cajun Rice (Regular)", "size": "Regular (107g)", "calories": 170, "protein_g": 6, "carb_g": 22, "fat_g": 6, "sugar_g": 0, "sodium_mg": 530, "serving_g": 107, "aliases": ["cajun rice popeyes"]},
+        {"id": "POP011", "name": "Cole Slaw (Regular)", "size": "Regular (113g)", "calories": 220, "protein_g": 1, "carb_g": 26, "fat_g": 13, "sugar_g": 22, "sodium_mg": 250, "serving_g": 113, "aliases": ["popeyes cole slaw", "coleslaw popeyes"]},
+        {"id": "POP012", "name": "Biscuit", "size": "1 biscuit (58g)", "calories": 240, "protein_g": 4, "carb_g": 24, "fat_g": 14, "sugar_g": 2, "sodium_mg": 590, "serving_g": 58, "aliases": ["popeyes biscuit"]},
+        {"id": "POP013", "name": "Mac & Cheese (Regular)", "size": "Regular (155g)", "calories": 240, "protein_g": 9, "carb_g": 21, "fat_g": 13, "sugar_g": 2, "sodium_mg": 800, "serving_g": 155, "aliases": ["popeyes mac and cheese"]},
+        {"id": "POP014", "name": "Apple Pie", "size": "1 pie (94g)", "calories": 290, "protein_g": 2, "carb_g": 38, "fat_g": 15, "sugar_g": 18, "sodium_mg": 290, "serving_g": 94, "aliases": ["popeyes apple pie"]},
+        {"id": "POP015", "name": "Shrimp Tackle Box (8 pc)", "size": "8 shrimp w/ side (210g)", "calories": 600, "protein_g": 15, "carb_g": 70, "fat_g": 28, "sugar_g": 4, "sodium_mg": 1440, "serving_g": 210, "aliases": ["popeyes shrimp", "shrimp tackle box"]}
+      ]
+    },
+    {
+      "restaurant": "In-N-Out Burger",
+      "source_url": "https://www.in-n-out.com/nutrition",
+      "items": [
+        {"id": "INO001", "name": "Hamburger (with Onion)", "size": "1 burger (243g)", "calories": 390, "protein_g": 16, "carb_g": 39, "fat_g": 19, "sugar_g": 10, "sodium_mg": 650, "serving_g": 243, "aliases": ["in n out hamburger", "in-n-out hamburger"]},
+        {"id": "INO002", "name": "Cheeseburger (with Onion)", "size": "1 burger (268g)", "calories": 480, "protein_g": 22, "carb_g": 39, "fat_g": 27, "sugar_g": 10, "sodium_mg": 1000, "serving_g": 268, "aliases": ["in n out cheeseburger", "cheeseburger in n out"]},
+        {"id": "INO003", "name": "Double-Double (with Onion)", "size": "1 burger (330g)", "calories": 670, "protein_g": 37, "carb_g": 39, "fat_g": 41, "sugar_g": 10, "sodium_mg": 1440, "serving_g": 330, "aliases": ["double double", "in n out double"]},
+        {"id": "INO004", "name": "3x3", "size": "1 burger (~390g)", "calories": 860, "protein_g": 52, "carb_g": 39, "fat_g": 55, "sugar_g": 10, "sodium_mg": 1880, "serving_g": 390, "aliases": ["3x3", "triple triple"]},
+        {"id": "INO005", "name": "Animal Style Cheeseburger", "size": "1 burger (~300g)", "calories": 590, "protein_g": 22, "carb_g": 41, "fat_g": 38, "sugar_g": 10, "sodium_mg": 1280, "serving_g": 300, "aliases": ["animal style", "animal style cheeseburger"]},
+        {"id": "INO006", "name": "Protein Style Cheeseburger (Lettuce Wrap)", "size": "1 burger (300g)", "calories": 330, "protein_g": 18, "carb_g": 11, "fat_g": 25, "sugar_g": 7, "sodium_mg": 720, "serving_g": 300, "aliases": ["protein style", "lettuce wrap burger in n out"]},
+        {"id": "INO007", "name": "Flying Dutchman", "size": "1 burger (~150g)", "calories": 380, "protein_g": 26, "carb_g": 3, "fat_g": 30, "sugar_g": 1, "sodium_mg": 720, "serving_g": 150, "aliases": ["flying dutchman"]},
+        {"id": "INO008", "name": "French Fries", "size": "1 order (125g)", "calories": 370, "protein_g": 7, "carb_g": 54, "fat_g": 18, "sugar_g": 0, "sodium_mg": 250, "serving_g": 125, "aliases": ["in n out fries", "french fries in n out"]},
+        {"id": "INO009", "name": "Animal Style Fries", "size": "1 order (~250g)", "calories": 750, "protein_g": 20, "carb_g": 61, "fat_g": 48, "sugar_g": 6, "sodium_mg": 1190, "serving_g": 250, "aliases": ["animal style fries"]},
+        {"id": "INO010", "name": "Vanilla Shake", "size": "1 shake (425g)", "calories": 680, "protein_g": 11, "carb_g": 78, "fat_g": 36, "sugar_g": 57, "sodium_mg": 390, "serving_g": 425, "aliases": ["in n out vanilla shake"]},
+        {"id": "INO011", "name": "Chocolate Shake", "size": "1 shake (425g)", "calories": 690, "protein_g": 9, "carb_g": 83, "fat_g": 36, "sugar_g": 62, "sodium_mg": 390, "serving_g": 425, "aliases": ["in n out chocolate shake"]},
+        {"id": "INO012", "name": "Strawberry Shake", "size": "1 shake (425g)", "calories": 720, "protein_g": 9, "carb_g": 91, "fat_g": 36, "sugar_g": 75, "sodium_mg": 280, "serving_g": 425, "aliases": ["in n out strawberry shake"]},
+        {"id": "INO013", "name": "Neapolitan Shake", "size": "1 shake (425g)", "calories": 700, "protein_g": 9, "carb_g": 85, "fat_g": 36, "sugar_g": 64, "sodium_mg": 350, "serving_g": 425, "aliases": ["neapolitan shake"]},
+        {"id": "INO014", "name": "Grilled Cheese", "size": "1 sandwich (243g)", "calories": 380, "protein_g": 13, "carb_g": 41, "fat_g": 18, "sugar_g": 10, "sodium_mg": 1000, "serving_g": 243, "aliases": ["in n out grilled cheese"]},
+        {"id": "INO015", "name": "Hot Cocoa", "size": "8 fl oz", "calories": 130, "protein_g": 2, "carb_g": 25, "fat_g": 3, "sugar_g": 22, "sodium_mg": 105, "serving_g": 237, "aliases": ["in n out hot cocoa"]}
+      ]
+    },
+    {
+      "restaurant": "Wingstop",
+      "source_url": "https://www.wingstop.com/nutrition",
+      "items": [
+        {"id": "WS001", "name": "Classic Wings (Original Hot, 5 pc)", "size": "5 wings (~140g)", "calories": 420, "protein_g": 36, "carb_g": 6, "fat_g": 27, "sugar_g": 0, "sodium_mg": 1170, "serving_g": 140, "aliases": ["wingstop classic wings", "original hot wings"]},
+        {"id": "WS002", "name": "Boneless Wings (Lemon Pepper, 5 pc)", "size": "5 wings (~140g)", "calories": 390, "protein_g": 23, "carb_g": 32, "fat_g": 18, "sugar_g": 1, "sodium_mg": 1830, "serving_g": 140, "aliases": ["lemon pepper boneless wings", "boneless wings wingstop"]},
+        {"id": "WS003", "name": "Boneless Wings (Hot Honey Rub, 5 pc)", "size": "5 wings (~140g)", "calories": 410, "protein_g": 23, "carb_g": 36, "fat_g": 18, "sugar_g": 6, "sodium_mg": 1230, "serving_g": 140, "aliases": ["hot honey rub wings", "hot honey wings"]},
+        {"id": "WS004", "name": "Classic Wings (Garlic Parmesan, 5 pc)", "size": "5 wings (~140g)", "calories": 460, "protein_g": 36, "carb_g": 5, "fat_g": 32, "sugar_g": 0, "sodium_mg": 1130, "serving_g": 140, "aliases": ["garlic parmesan wings"]},
+        {"id": "WS005", "name": "Classic Wings (Mango Habanero, 5 pc)", "size": "5 wings (~140g)", "calories": 430, "protein_g": 36, "carb_g": 13, "fat_g": 26, "sugar_g": 9, "sodium_mg": 990, "serving_g": 140, "aliases": ["mango habanero wings"]},
+        {"id": "WS006", "name": "Classic Wings (Atomic, 5 pc)", "size": "5 wings (~140g)", "calories": 420, "protein_g": 36, "carb_g": 6, "fat_g": 27, "sugar_g": 0, "sodium_mg": 1230, "serving_g": 140, "aliases": ["atomic wings"]},
+        {"id": "WS007", "name": "Boneless Wings (Cajun, 5 pc)", "size": "5 wings (~140g)", "calories": 370, "protein_g": 23, "carb_g": 31, "fat_g": 16, "sugar_g": 1, "sodium_mg": 1410, "serving_g": 140, "aliases": ["cajun boneless wings"]},
+        {"id": "WS008", "name": "Chicken Tenders (Hawaiian, 3 pc)", "size": "3 tenders (~145g)", "calories": 460, "protein_g": 35, "carb_g": 46, "fat_g": 16, "sugar_g": 14, "sodium_mg": 1730, "serving_g": 145, "aliases": ["wingstop tenders", "hawaiian tenders"]},
+        {"id": "WS009", "name": "Seasoned Fries (Regular)", "size": "Regular (~138g)", "calories": 460, "protein_g": 5, "carb_g": 55, "fat_g": 25, "sugar_g": 0, "sodium_mg": 740, "serving_g": 138, "aliases": ["wingstop fries", "seasoned fries"]},
+        {"id": "WS010", "name": "Cheese Fries", "size": "1 order (~190g)", "calories": 660, "protein_g": 10, "carb_g": 57, "fat_g": 44, "sugar_g": 1, "sodium_mg": 1280, "serving_g": 190, "aliases": ["wingstop cheese fries", "cheese fries"]},
+        {"id": "WS011", "name": "Veggie Sticks (Carrots & Celery)", "size": "1 order (~99g)", "calories": 25, "protein_g": 0, "carb_g": 5, "fat_g": 0, "sugar_g": 3, "sodium_mg": 50, "serving_g": 99, "aliases": ["veggie sticks wingstop"]},
+        {"id": "WS012", "name": "Ranch Dressing (Side)", "size": "1.5 oz (43g)", "calories": 200, "protein_g": 1, "carb_g": 2, "fat_g": 21, "sugar_g": 1, "sodium_mg": 280, "serving_g": 43, "aliases": ["wingstop ranch", "ranch dressing"]},
+        {"id": "WS013", "name": "Blue Cheese Dressing", "size": "1.5 oz (43g)", "calories": 160, "protein_g": 1, "carb_g": 1, "fat_g": 17, "sugar_g": 1, "sodium_mg": 360, "serving_g": 43, "aliases": ["blue cheese dressing"]},
+        {"id": "WS014", "name": "Buffalo Ranch Fries", "size": "1 order (~200g)", "calories": 690, "protein_g": 6, "carb_g": 56, "fat_g": 49, "sugar_g": 0, "sodium_mg": 1320, "serving_g": 200, "aliases": ["buffalo ranch fries"]},
+        {"id": "WS015", "name": "Classic Wings (Mild, 10 pc)", "size": "10 wings (~280g)", "calories": 830, "protein_g": 73, "carb_g": 13, "fat_g": 53, "sugar_g": 0, "sodium_mg": 2050, "serving_g": 280, "aliases": ["mild wings 10 pc", "10 pc mild wings"]}
+      ]
+    },
+    {
+      "restaurant": "Raising Cane's",
+      "source_url": "https://www.raisingcanes.com/nutrition",
+      "items": [
+        {"id": "RC001", "name": "Chicken Finger (1 pc)", "size": "1 finger (~52g)", "calories": 130, "protein_g": 14, "carb_g": 6, "fat_g": 6, "sugar_g": 0, "sodium_mg": 360, "serving_g": 52, "aliases": ["canes chicken finger", "chicken finger raising canes"]},
+        {"id": "RC002", "name": "Box Combo (4 Chicken Fingers)", "size": "1 combo (~580g)", "calories": 1190, "protein_g": 56, "carb_g": 102, "fat_g": 63, "sugar_g": 16, "sodium_mg": 2900, "serving_g": 580, "aliases": ["box combo", "canes box combo", "4 chicken fingers combo"]},
+        {"id": "RC003", "name": "3 Finger Combo", "size": "1 combo (~510g)", "calories": 1080, "protein_g": 42, "carb_g": 97, "fat_g": 58, "sugar_g": 16, "sodium_mg": 2570, "serving_g": 510, "aliases": ["3 finger combo", "canes 3 finger"]},
+        {"id": "RC004", "name": "Caniac Combo (6 Chicken Fingers)", "size": "1 combo (~700g)", "calories": 1410, "protein_g": 84, "carb_g": 110, "fat_g": 73, "sugar_g": 16, "sodium_mg": 3560, "serving_g": 700, "aliases": ["caniac combo", "caniac"]},
+        {"id": "RC005", "name": "Chicken Sandwich", "size": "1 sandwich (~241g)", "calories": 720, "protein_g": 31, "carb_g": 53, "fat_g": 39, "sugar_g": 5, "sodium_mg": 1500, "serving_g": 241, "aliases": ["canes chicken sandwich", "raising canes sandwich"]},
+        {"id": "RC006", "name": "Kids Combo (2 Chicken Fingers)", "size": "1 combo (~330g)", "calories": 590, "protein_g": 28, "carb_g": 60, "fat_g": 25, "sugar_g": 17, "sodium_mg": 1430, "serving_g": 330, "aliases": ["canes kids combo", "kids combo"]},
+        {"id": "RC007", "name": "Crinkle-Cut Fries (Regular)", "size": "Regular (~141g)", "calories": 410, "protein_g": 5, "carb_g": 52, "fat_g": 21, "sugar_g": 1, "sodium_mg": 590, "serving_g": 141, "aliases": ["canes fries", "crinkle fries"]},
+        {"id": "RC008", "name": "Coleslaw", "size": "1 side (~99g)", "calories": 360, "protein_g": 2, "carb_g": 23, "fat_g": 30, "sugar_g": 19, "sodium_mg": 360, "serving_g": 99, "aliases": ["canes coleslaw", "raising canes slaw"]},
+        {"id": "RC009", "name": "Texas Toast (1 slice)", "size": "1 slice (~52g)", "calories": 170, "protein_g": 3, "carb_g": 22, "fat_g": 8, "sugar_g": 1, "sodium_mg": 300, "serving_g": 52, "aliases": ["texas toast canes"]},
+        {"id": "RC010", "name": "Cane's Sauce (1 oz)", "size": "1 oz (~28g)", "calories": 140, "protein_g": 0, "carb_g": 4, "fat_g": 14, "sugar_g": 3, "sodium_mg": 230, "serving_g": 28, "aliases": ["canes sauce", "raising canes sauce"]},
+        {"id": "RC011", "name": "Honey Mustard Sauce", "size": "1 oz (~28g)", "calories": 110, "protein_g": 0, "carb_g": 8, "fat_g": 9, "sugar_g": 6, "sodium_mg": 180, "serving_g": 28, "aliases": ["honey mustard sauce"]},
+        {"id": "RC012", "name": "BBQ Sauce", "size": "1 oz (~28g)", "calories": 40, "protein_g": 0, "carb_g": 10, "fat_g": 0, "sugar_g": 8, "sodium_mg": 290, "serving_g": 28, "aliases": ["bbq sauce canes"]},
+        {"id": "RC013", "name": "Sweet Tea (Regular)", "size": "22 fl oz", "calories": 165, "protein_g": 0, "carb_g": 41, "fat_g": 0, "sugar_g": 41, "sodium_mg": 0, "serving_g": 651, "aliases": ["canes sweet tea"]},
+        {"id": "RC014", "name": "Lemonade (Regular)", "size": "22 fl oz", "calories": 200, "protein_g": 0, "carb_g": 51, "fat_g": 0, "sugar_g": 51, "sodium_mg": 0, "serving_g": 651, "aliases": ["canes lemonade"]},
+        {"id": "RC015", "name": "Chicken Finger Plate (3 fingers + sides)", "size": "1 plate (~430g)", "calories": 920, "protein_g": 42, "carb_g": 88, "fat_g": 47, "sugar_g": 16, "sodium_mg": 2310, "serving_g": 430, "aliases": ["chicken finger plate"]}
+      ]
+    },
+    {
+      "restaurant": "Jersey Mike's",
+      "source_url": "https://www.jerseymikes.com/menu/nutrition",
+      "items": [
+        {"id": "JM001", "name": "Original Italian (Regular, sub roll)", "size": "Regular (~376g)", "calories": 900, "protein_g": 41, "carb_g": 73, "fat_g": 47, "sugar_g": 7, "sodium_mg": 2370, "serving_g": 376, "aliases": ["original italian", "jersey mikes italian", "italian sub"]},
+        {"id": "JM002", "name": "Turkey & Provolone (Regular)", "size": "Regular (~325g)", "calories": 670, "protein_g": 38, "carb_g": 71, "fat_g": 26, "sugar_g": 8, "sodium_mg": 1880, "serving_g": 325, "aliases": ["jersey mikes turkey", "turkey provolone sub"]},
+        {"id": "JM003", "name": "Club Sub (Regular)", "size": "Regular (~340g)", "calories": 720, "protein_g": 41, "carb_g": 70, "fat_g": 30, "sugar_g": 8, "sodium_mg": 2040, "serving_g": 340, "aliases": ["jersey mikes club sub", "club sub"]},
+        {"id": "JM004", "name": "The Original Cheese Steak (Regular)", "size": "Regular (~404g)", "calories": 880, "protein_g": 50, "carb_g": 80, "fat_g": 39, "sugar_g": 9, "sodium_mg": 1750, "serving_g": 404, "aliases": ["jersey mikes cheese steak", "original cheese steak"]},
+        {"id": "JM005", "name": "Chicken Philly (Regular)", "size": "Regular (~404g)", "calories": 770, "protein_g": 49, "carb_g": 81, "fat_g": 27, "sugar_g": 9, "sodium_mg": 1620, "serving_g": 404, "aliases": ["chicken philly jersey mikes", "chicken cheese steak"]},
+        {"id": "JM006", "name": "Big Kahuna Cheese Steak (Regular)", "size": "Regular (~440g)", "calories": 1020, "protein_g": 53, "carb_g": 81, "fat_g": 53, "sugar_g": 9, "sodium_mg": 2080, "serving_g": 440, "aliases": ["big kahuna", "big kahuna cheese steak"]},
+        {"id": "JM007", "name": "Roast Beef & Provolone (Regular)", "size": "Regular (~325g)", "calories": 670, "protein_g": 39, "carb_g": 70, "fat_g": 25, "sugar_g": 7, "sodium_mg": 1660, "serving_g": 325, "aliases": ["roast beef provolone", "jersey mikes roast beef"]},
+        {"id": "JM008", "name": "BLT (Regular)", "size": "Regular (~262g)", "calories": 680, "protein_g": 25, "carb_g": 69, "fat_g": 35, "sugar_g": 7, "sodium_mg": 1560, "serving_g": 262, "aliases": ["blt jersey mikes", "blt sub"]},
+        {"id": "JM009", "name": "Tuna (Regular)", "size": "Regular (~340g)", "calories": 770, "protein_g": 33, "carb_g": 70, "fat_g": 39, "sugar_g": 8, "sodium_mg": 1480, "serving_g": 340, "aliases": ["jersey mikes tuna", "tuna sub"]},
+        {"id": "JM010", "name": "Cancer Research Sub (Turkey, Provolone)", "size": "Regular (~340g)", "calories": 670, "protein_g": 39, "carb_g": 70, "fat_g": 25, "sugar_g": 8, "sodium_mg": 1880, "serving_g": 340, "aliases": ["cancer research sub", "turkey and provolone sub"]},
+        {"id": "JM011", "name": "Veggie (Regular)", "size": "Regular (~256g)", "calories": 600, "protein_g": 24, "carb_g": 73, "fat_g": 24, "sugar_g": 9, "sodium_mg": 1380, "serving_g": 256, "aliases": ["jersey mikes veggie", "veggie sub"]},
+        {"id": "JM012", "name": "Mike's Famous Philly (Regular)", "size": "Regular (~404g)", "calories": 920, "protein_g": 50, "carb_g": 81, "fat_g": 43, "sugar_g": 9, "sodium_mg": 1860, "serving_g": 404, "aliases": ["mikes famous philly", "famous philly"]},
+        {"id": "JM013", "name": "Buffalo Chicken Cheese Steak (Regular)", "size": "Regular (~430g)", "calories": 840, "protein_g": 51, "carb_g": 82, "fat_g": 33, "sugar_g": 10, "sodium_mg": 2070, "serving_g": 430, "aliases": ["buffalo chicken cheese steak"]},
+        {"id": "JM014", "name": "Bacon Ranch Chicken Cheese Steak (Regular)", "size": "Regular (~444g)", "calories": 940, "protein_g": 54, "carb_g": 82, "fat_g": 44, "sugar_g": 9, "sodium_mg": 1950, "serving_g": 444, "aliases": ["bacon ranch chicken cheese steak"]},
+        {"id": "JM015", "name": "Chips Side (Lays Classic)", "size": "1 bag (~28g)", "calories": 160, "protein_g": 2, "carb_g": 15, "fat_g": 10, "sugar_g": 0, "sodium_mg": 170, "serving_g": 28, "aliases": ["lays chips", "chips side jersey mikes"]}
+      ]
     }
   ]
 }
