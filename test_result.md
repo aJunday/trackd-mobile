@@ -347,15 +347,35 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
-    - "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
-    - "Shopping List CRUD — /api/shopping-list"
-  stuck_tasks:
-    - "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
-    - "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
+  current_focus: []
+  stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+backend:
+  - task: "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL 4 REVIEW SCENARIOS PASS after fix at server.py L1262 + L1306 (now reads p.get('item_name') or p.get('name')). Test script /app/backend_test.py against EXPO_PUBLIC_BACKEND_URL/api with Bearer test_session_trackd_1777237904201. (1) Dry-run with pantry hit: POST /pantry {item_name:'chicken breast', quantity:500, unit:'g'} → 200. POST /pantry/cook-meal {ingredients:['150g chicken breast'], dry_run:true} → matched=[{pantry_name:'chicken breast', available:500, deduct:150, after:350, pantry_unit:'g', pantry_item_id:'pi_040ad899fc8e'}] unmatched=[] ✓. (2) Apply deducts: same payload dry_run:false → 200 success; GET /pantry shows chicken breast quantity=350.0 ✓. (3) Cap-at-zero + delete: recreate chicken at 10g, apply 100g → 200; GET /pantry no longer contains chicken (deleted because new_qty=0) ✓. (4) No-match unmatched: empty pantry, apply '300g martian-meat' → matched=[], unmatched=[{raw:'300g martian-meat', parsed_name:'martian-meat', quantity:300.0, unit:'g'}] ✓. Bug fully resolved."
+
+  - task: "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL 6 REVIEW SCENARIOS PASS after fix at server.py L1395 (cutoff widened from 21d to 22d to safely include measurements taken ~21d ago). Test script /app/backend_test.py against EXPO_PUBLIC_BACKEND_URL/api with Bearer test_session_trackd_1777237904201; measurements seeded directly into Mongo with created_at exactly 21 days ago. (1) Stalled lose_fat (80→80.1kg over 21d): suggestion.direction='reduce', goal_type='lose_fat', delta_kg_21d=0.1 ✓. (2) Stalled build_muscle: suggestion.direction='increase', proposed_calories=3110 (new_tdee+350) ✓. (3) Maintain fluctuating (80→82kg): suggestion.direction='reduce' (>1kg gain triggers re-align to TDEE) ✓. (4) Maintain stable (80→80.5kg, |Δ|=0.5≤1.0): suggestion=null ✓. (5) Not-enough-span (5 days): suggestion=null (span_days<18 guard) ✓. (6) POST /coach/apply-calorie-adjustment {calories:1800, protein:140, carbs:180, fats:60, tdee:2300, weight_kg:80} → 200 success; GET /auth/me shows goal_calories=1800, goal_protein=140, goal_carbs=180, goal_fats=60, tdee=2300.0, weight_kg=80.0 — all persisted ✓. Bug fully resolved."
 
 frontend_packaged_ui:
   - task: "Packaged-product detection UI (3-tab scanner + advisory banner + USDA badge + unmatched CTAs)"
@@ -778,6 +798,9 @@ backend:
   - task: "Shopping List CRUD — /api/shopping-list"
     implemented: true
     working: true
+
+  - agent: "testing"
+    message: "✅ Re-test of the 2 patched endpoints — ALL 10 review scenarios PASS. (FIX 1 cook-meal) 4/4 pass: dry_run shows matched chicken (avail 500, deduct 150, after 350); apply deducts to 350g; cap-at-zero deletes pantry doc; phantom martian-meat goes to unmatched. (FIX 2 calorie-adjustment) 6/6 pass: stalled lose_fat → direction=reduce; stalled build_muscle → direction=increase; maintain fluctuating (|Δ|=2kg) → suggestion populated; maintain stable (|Δ|=0.5kg) → null; <18d span → null; apply persists goal_calories/protein/carbs/fats/tdee/weight_kg via /auth/me. Shopping list NOT re-tested (already PASS per prior run). User state restored to pre-test values (build_muscle, 2500cal). No further bugs found."
     file: "backend/server.py"
     stuck_count: 0
     priority: "medium"

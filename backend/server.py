@@ -1259,7 +1259,7 @@ def _match_pantry_item(parsed_name: str, pantry: List[dict]) -> Optional[dict]:
     best = None
     best_score = 0
     for p in pantry:
-        pn = (p.get("name") or "").lower()
+        pn = (p.get("item_name") or p.get("name") or "").lower()
         p_tokens = set(re.findall(r"[a-z]{3,}", pn))
         overlap = len(tokens & p_tokens)
         if overlap > best_score and overlap > 0:
@@ -1303,7 +1303,7 @@ async def cook_meal(
                 "raw": raw,
                 "parsed_name": parsed["name"],
                 "pantry_item_id": hit.get("item_id"),
-                "pantry_name": hit.get("name"),
+                "pantry_name": hit.get("item_name") or hit.get("name"),
                 "pantry_unit": hit.get("unit"),
                 "available": available,
                 "deduct": round(deduct_final, 2),
@@ -1390,7 +1390,9 @@ async def coach_calorie_adjustment(user: User = Depends(get_current_user)):
             return None
         return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=21)).replace(tzinfo=None)
+    # Use 22-day cutoff to safely include measurements taken ~21 days ago
+    # (avoids off-by-one when client and server clocks differ slightly).
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=22)).replace(tzinfo=None)
     weights = await db.measurements.find(
         {"user_id": user.user_id, "weight_kg": {"$ne": None}},
         {"_id": 0},
