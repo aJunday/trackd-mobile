@@ -38,6 +38,7 @@ templates_router = APIRouter(prefix="/templates", tags=["templates"])
 scanner_router = APIRouter(prefix="/scanner", tags=["scanner"])
 programs_router = APIRouter(prefix="/programs", tags=["programs"])
 coach_router = APIRouter(prefix="/coach", tags=["coach"])
+shopping_router = APIRouter(prefix="/shopping-list", tags=["shopping-list"])
 
 # Configure logging
 logging.basicConfig(
@@ -1380,7 +1381,7 @@ async def coach_calorie_adjustment(user: User = Depends(get_current_user)):
     """If the user is on lose_fat/build_muscle and their weight has stalled
     for 21 days (Δ ≤ 0.3 kg), suggest a new calorie target.
     """
-    if not user.goal_type or user.goal_type not in {"lose_fat", "build_muscle"}:
+    if not user.goal_type or user.goal_type not in {"lose_fat", "build_muscle", "maintain"}:
         return {"suggestion": None}
 
     # Normalize datetimes to naive UTC for comparison (Mongo stores naive)
@@ -1414,7 +1415,12 @@ async def coach_calorie_adjustment(user: User = Depends(get_current_user)):
         return {"suggestion": None}
 
     delta = float(latest["weight_kg"]) - float(earliest_in_window["weight_kg"])
-    if abs(delta) > 0.3:
+
+    # For lose_fat / build_muscle: trigger when stalled (|Δ| ≤ 0.3kg)
+    # For maintain: trigger when fluctuating > 1kg either direction
+    if user.goal_type in {"lose_fat", "build_muscle"} and abs(delta) > 0.3:
+        return {"suggestion": None}
+    if user.goal_type == "maintain" and abs(delta) <= 1.0:
         return {"suggestion": None}
 
     # Recompute TDEE from current weight + existing user inputs
@@ -1431,13 +1437,27 @@ async def coach_calorie_adjustment(user: User = Depends(get_current_user)):
             f"{new_weight:.1f}kg your new maintenance is approximately {new_tdee} cal. "
             f"Would you like to reduce your calorie goal to {proposed_calories} cal to continue losing weight?"
         )
-    else:  # build_muscle
+    elif user.goal_type == "build_muscle":
         proposed_calories = new_tdee + 250 + 100  # small bump of 100–150 above the previous surplus
         direction = "increase"
         copy = (
             f"You're not gaining weight. Based on your current weight of "
             f"{new_weight:.1f}kg your new maintenance is approximately {new_tdee} cal. "
             f"Would you like to increase your calorie goal to {proposed_calories} cal to continue building muscle?"
+        )
+    else:  # maintain — weight is drifting; align to actual TDEE
+        proposed_calories = new_tdee
+        if delta > 0:
+            direction = "reduce"
+            trend_copy = f"you've gained {delta:.1f}kg"
+        else:
+            direction = "increase"
+            trend_copy = f"you've lost {abs(delta):.1f}kg"
+        copy = (
+            f"Your weight has been fluctuating — in the last 21 days {trend_copy}. "
+            f"Based on your current weight of {new_weight:.1f}kg your new maintenance is "
+            f"approximately {new_tdee} cal. Would you like to update your calorie goal to "
+            f"{proposed_calories} cal to match your actual TDEE?"
         )
 
     protein, carbs, fats = calculate_macros(new_weight, new_tdee, proposed_calories)
@@ -1486,6 +1506,111 @@ async def apply_calorie_adjustment(
         patch["weight_kg"] = float(req.weight_kg)
     await db.users.update_one({"user_id": user.user_id}, {"$set": patch})
     return {"success": True, **patch}
+
+
+
+# ---------- Shopping List ----------
+class ShoppingListItemCreate(BaseModel):
+    name: str
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+    source: Optional[str] = None  # 'ai_chef', 'manual', etc.
+
+
+class ShoppingListBulkCreate(BaseModel):
+    items: List[ShoppingListItemCreate]
+
+
+@shopping_router.get("")
+async def list_shopping_items(user: User = Depends(get_current_user)):
+    items = await db.shopping_list.find(
+        {"user_id": user.user_id},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(500)
+    return {"items": items}
+
+
+@shopping_router.post("")
+async def add_shopping_item(req: ShoppingListItemCreate, user: User = Depends(get_current_user)):
+    name_clean = (req.name or "").strip()
+    if not name_clean:
+        raise HTTPException(status_code=400, detail="Item name required")
+    # De-dupe by name (case-insensitive) — bump quantity if already exists & unchecked
+    existing = await db.shopping_list.find_one({
+        "user_id": user.user_id,
+        "name_lower": name_clean.lower(),
+        "checked": False,
+    })
+    if existing:
+        return {"success": True, "item": {**existing, "_id": str(existing.get("_id", ""))}, "deduped": True}
+
+    item = {
+        "item_id": f"sl_{uuid.uuid4().hex[:10]}",
+        "user_id": user.user_id,
+        "name": name_clean,
+        "name_lower": name_clean.lower(),
+        "quantity": req.quantity,
+        "unit": req.unit,
+        "source": req.source or "manual",
+        "checked": False,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.shopping_list.insert_one(item)
+    return {"success": True, "item": {k: v for k, v in item.items() if k != "_id"}}
+
+
+@shopping_router.post("/bulk")
+async def bulk_add_shopping_items(req: ShoppingListBulkCreate, user: User = Depends(get_current_user)):
+    added = 0
+    for it in req.items:
+        name_clean = (it.name or "").strip()
+        if not name_clean:
+            continue
+        existing = await db.shopping_list.find_one({
+            "user_id": user.user_id,
+            "name_lower": name_clean.lower(),
+            "checked": False,
+        })
+        if existing:
+            continue
+        await db.shopping_list.insert_one({
+            "item_id": f"sl_{uuid.uuid4().hex[:10]}",
+            "user_id": user.user_id,
+            "name": name_clean,
+            "name_lower": name_clean.lower(),
+            "quantity": it.quantity,
+            "unit": it.unit,
+            "source": it.source or "ai_chef",
+            "checked": False,
+            "created_at": datetime.now(timezone.utc),
+        })
+        added += 1
+    return {"success": True, "added": added}
+
+
+@shopping_router.put("/{item_id}/toggle")
+async def toggle_shopping_item(item_id: str, user: User = Depends(get_current_user)):
+    existing = await db.shopping_list.find_one({"user_id": user.user_id, "item_id": item_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Item not found")
+    new_state = not bool(existing.get("checked", False))
+    await db.shopping_list.update_one(
+        {"item_id": item_id, "user_id": user.user_id},
+        {"$set": {"checked": new_state, "checked_at": datetime.now(timezone.utc) if new_state else None}},
+    )
+    return {"success": True, "checked": new_state}
+
+
+@shopping_router.delete("/{item_id}")
+async def delete_shopping_item(item_id: str, user: User = Depends(get_current_user)):
+    res = await db.shopping_list.delete_one({"user_id": user.user_id, "item_id": item_id})
+    return {"success": True, "deleted": res.deleted_count}
+
+
+@shopping_router.delete("/clear/checked")
+async def clear_checked_items(user: User = Depends(get_current_user)):
+    res = await db.shopping_list.delete_many({"user_id": user.user_id, "checked": True})
+    return {"success": True, "deleted": res.deleted_count}
 
 
 
@@ -4055,6 +4180,7 @@ api_router.include_router(templates_router)
 api_router.include_router(scanner_router)
 api_router.include_router(programs_router)
 api_router.include_router(coach_router)
+api_router.include_router(shopping_router)
 app.include_router(api_router)
 
 # CORS middleware

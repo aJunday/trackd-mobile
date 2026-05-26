@@ -18,6 +18,7 @@ import { recommendSplit, getAllSplits, getDayName, getTodayWorkout, DaysPerWeek,
 import CoachCardsSection from '../../src/components/CoachCardsSection';
 import HabitsSection from '../../src/components/HabitsSection';
 import DailyWarningIntro from '../../src/components/DailyWarningIntro';
+import CalorieAdjustmentCard from '../../src/components/CalorieAdjustmentCard';
 
 const ACCENT = '#F5A623';
 const PR = '#FF6B35';
@@ -206,6 +207,9 @@ export default function Dashboard() {
             </View>
           </View>
         </TouchableOpacity>
+
+        {/* Calorie Adjustment suggestion (auto-shows if weight has stalled/drifted) */}
+        <CalorieAdjustmentCard sessionToken={sessionToken} onApplied={load} />
 
         {/* Weekly split schedule */}
         {userSplit && (

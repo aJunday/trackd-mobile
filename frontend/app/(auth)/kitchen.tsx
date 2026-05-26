@@ -311,6 +311,12 @@ export default function KitchenScreen() {
             onPress={() => router.push('/(auth)/pantry')}
           />
           <ActionTile
+            icon="cart"
+            label="Shopping"
+            sub="List & buy"
+            onPress={() => router.push('/(auth)/shopping-list' as any)}
+          />
+          <ActionTile
             icon="sparkles"
             label="AI Chef"
             sub="Get a recipe"

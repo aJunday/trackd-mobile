@@ -348,8 +348,12 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Packaged-product detection UI in meal scanner"
-  stuck_tasks: []
+    - "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
+    - "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
+    - "Shopping List CRUD — /api/shopping-list"
+  stuck_tasks:
+    - "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
+    - "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
   test_all: false
   test_priority: "high_first"
 
@@ -734,3 +738,62 @@ frontend:
 agent_communication:
   - agent: "testing"
     message: "Four UI additions to TRACKD verified — all 4 PASS. (1) Daily Warning Intro animation fires correctly on first load after clearing trackd.last_warning_date in localStorage, then correctly suppresses on subsequent loads same-day. (2) Template Preview shows Edit button (pencil+text) top-right, meta pills, Targets line, Science-backed badge, exercise rows with thumbnails+blue ? icons, Start Workout CTA — confirmed visually in screenshot. Edit button Alert dialog wired but uses browser-native window.confirm on web (not visible via DOM text scan; code path verified in workout.tsx:896). (3) Exercise Options Menu replaces trash icon with ... (horizontal ellipsis) and shows all 6 options exactly as spec: Add Note / Add Warm-up Sets / Update Rest Timer / Replace Exercise / Create Superset / Remove Exercise (red). Note flow verified end-to-end ('felt easy' saved and visible). Remove Exercise confirm dialog fires. (4) 'My Templates (0/3)' header shown even when empty, 'No saved templates yet' + 'Max 3' helper text present. No hard render failures, no red-screen errors. Console showed only the known shadow*/onResponder* deprecation warnings — ignored per instructions. All 4 additions production-ready."
+
+
+##====================================================================================================
+## NEW TASKS — AI Chef Pantry Deduction + Calorie Goal Adjustment + Shopping List (June 2025)
+##====================================================================================================
+
+backend:
+  - task: "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
+    implemented: true
+    working: false
+    file: "backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Already-built endpoint POST /api/pantry/cook-meal: with dry_run=true returns {matched:[{pantry_item_id, pantry_name, pantry_unit, available, deduct, after}], unmatched:[{raw, parsed_name, quantity, unit}]}. With dry_run=false additionally deducts pantry quantities (or deletes when <=0) and inserts an entry into db.meals with source='ai_chef'. Frontend now wired to it via 'Make This Meal' button on each AI Chef recipe card. Need test: (a) dry_run path matches pantry items by name token overlap, (b) apply path deducts quantities AND inserts into meals collection, (c) handles empty ingredients and 0 matches gracefully."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL BUG — pantry matching is broken because of field-name mismatch. Tested against https://fitness-command-7.preview.emergentagent.com/api with session test_session_trackd_1777237904201. ✅ T3 empty ingredients [] → matched=[] unmatched=[]. ✅ T4 dry-run with empty pantry → success=true dry_run=true matched=[] unmatched=[4 items] (correct {raw, parsed_name, quantity, unit} shape; parsing '150g chicken breast' → parsed_name='chicken breast', qty=150, unit='g' ✓). ✅ Apply path returns success=true meal_logged=true and the meal IS inserted into today's meals (verified via DB; GET /api/nutrition/today shows consumed=550 cal). ✅ Auth gating: unauth → 401. ❌ HOWEVER, even after POST /api/pantry creates {item_name:'chicken breast', quantity:500, unit:'g'}, the cook-meal endpoint returns matched=[] (all ingredients land in unmatched). Pantry is NEVER deducted — chicken stayed at 500g. ❌ T5 (cap+delete at qty=0): pantry item at 10g + 'deduct 100g chicken' → matched=[], item NOT deleted, qty unchanged. ROOT CAUSE — _match_pantry_item at server.py:1262 reads `p.get('name')` but pantry docs store the food name under `item_name` (PantryItem model line 228, also used by POST /api/pantry, GET /api/pantry, all the existing pantry CRUD). And cook_meal at line 1306 reads `hit.get('name')` for the response's pantry_name. Both should read `item_name`. FIX (2 small edits): server.py L1262 → `pn = (p.get('item_name') or p.get('name') or '').lower()`; server.py L1306 → `'pantry_name': hit.get('item_name') or hit.get('name')`. Without this fix the entire pantry-deduction feature is non-functional — Make This Meal will always show 'all ingredients missing' and never deduct anything. NOTE: review-request shorthand used POST /api/pantry {'name':...} but actual PantryItemCreate Pydantic model requires `item_name` (`name` would 422); my tests used `item_name` to align with the existing pantry contract."
+
+  - task: "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
+    implemented: true
+    working: false
+    file: "backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "GET /api/coach/calorie-adjustment: reads last 21d of measurements.weight_kg. Returns {suggestion:null} unless: (lose_fat/build_muscle) |Δ|≤0.3kg over ≥18-day span, OR (maintain) |Δ|>1kg over 21 days. Recomputes TDEE+macros based on current weight, returns proposed_calories/protein/carbs/fats/copy/direction. POST /api/coach/apply-calorie-adjustment: persists patched goals to users collection. Already returns 200 in logs. Need test: (a) returns null when not enough weight data, (b) returns suggestion when stalled (lose_fat), (c) returns suggestion when stalled (build_muscle), (d) returns suggestion when fluctuating (maintain >1kg), (e) apply endpoint persists to user record."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL OFF-BY-ONE in window cutoff — measurements at exactly 21 days ago (or older) get EXCLUDED from the comparison, so the spec's '21d apart' seed never triggers a suggestion. Tested via direct DB seeding + GET /api/coach/calorie-adjustment with session test_session_trackd_1777237904201. ✅ T1 no measurements → {suggestion:null}. ✅ T5 maintain stable (80kg vs 80.5kg, 21d apart) → null. ✅ T6 span<18d (5d apart) → null. ✅ T7 POST /coach/apply-calorie-adjustment {calories:1800, protein:140, carbs:180, fats:60, tdee:2300, weight_kg:80} → 200 success=true; GET /api/auth/me reflects goal_calories=1800, goal_protein=140 (persists correctly). ✅ Auth gating: unauth → 401 on both endpoints. ❌ T2 lose_fat stalled (seed 80.1kg @ 21d-ago, 80.0kg @ now) → {suggestion:null}. Expected: direction='reduce', proposed_calories < new_tdee. ❌ T3 build_muscle stalled (same setup) → null. Expected: direction='increase'. ❌ T4 maintain fluctuating (80kg @ 21d-ago, 82kg @ now) → null. Expected: suggestion populated. ROOT CAUSE — server.py:1393-1413: cutoff=now-21d; loop iterates measurements desc and breaks on the first measurement with `wts < cutoff`. When the older measurement is at *exactly* 21 days ago, its `wts` is computed BEFORE the endpoint runs, so it ends up a few hundred ms older than `cutoff` (cutoff is computed at request time). The loop breaks at that measurement and earliest_in_window stays = the LATEST measurement → span_days=0 → < 18 → returns null. EMPIRICAL SWEEP (same lose_fat user, seed 80.1kg @ Nd-ago, 80.0kg @ now): N=19 → suggestion populated (direction=reduce, proposed=2259, new_tdee=2759, delta=-0.1); N=20 → suggestion populated; N=21 → null ❌; N=22 → null ❌. FIX OPTIONS: (a) `cutoff = now - timedelta(days=22)` to include the boundary; (b) on break, set earliest_in_window=w before breaking (the measurement just-outside the window IS the closest one to '21d ago'); (c) if loop exhausts without break, accept the last w; otherwise the simplest: `earliest_in_window = weights[-1]` after sorting if `(latest_ts - oldest_ts).days >= 18`. Without this fix, the auto-adjustment notification will never fire for users whose oldest reference weight is ≥21 days old — i.e. the entire intended use-case."
+
+  - task: "Shopping List CRUD — /api/shopping-list"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW endpoints: GET /api/shopping-list (lists items), POST /api/shopping-list ({name, quantity?, unit?, source?}), POST /api/shopping-list/bulk ({items:[...]}), PUT /api/shopping-list/{item_id}/toggle (flips checked), DELETE /api/shopping-list/{item_id}, DELETE /api/shopping-list/clear/checked. Dedupes by lowercase name when unchecked. Smoke-test via curl already worked (logs show 200). Need full test: (1) add+list, (2) bulk add, (3) toggle, (4) delete one, (5) clear checked, (6) dedupe."
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL 11 shopping-list assertions PASS. Session test_session_trackd_1777237904201 against https://fitness-command-7.preview.emergentagent.com/api. (T1) POST /api/shopping-list {name:'tomatoes'} → 200 {success:true, item:{item_id:'sl_…', name:'tomatoes', name_lower:'tomatoes', source:'manual', checked:false, …}}. GET /api/shopping-list → 200 {items:[1 item]}. (T2) POST /bulk {items:[{onions},{garlic},{tomatoes}]} → 200 {added:2} (tomatoes correctly deduped by name_lower+checked=false). GET → 3 items. (T3) PUT /{tomato_id}/toggle → 200 {checked:true}; GET shows tomato.checked=true + checked_at timestamp. (T4) PUT again → {checked:false}. (T5) DELETE /{tomato_id} → 200 {deleted:1}; subsequent GET no longer contains tomato. (T6) Seed 3 items, toggle 2, DELETE /clear/checked → 200 {deleted:2}; remaining=1 unchecked. (T7) POST {name:''} → 400 {detail:'Item name required'}. ✅ Auth gating verified — all 6 endpoint variants return 401 without Bearer token (GET/POST /, POST /bulk, PUT toggle, DELETE id, DELETE /clear/checked). Endpoint group production-ready."
+
+agent_communication:
+  - agent: "testing"
+    message: "Backend testing of the 3 new feature groups complete. 30/37 assertions passed. ✅ SHOPPING LIST is fully production-ready (all 11 assertions PASS — list/add/bulk-dedupe/toggle/delete/clear-checked/empty-name-validation/auth all green). ❌ TWO REAL BACKEND BUGS BLOCK the other two features and need main-agent fix: (1) AI CHEF COOK-MEAL — pantry matching is broken due to field-name mismatch: server.py L1262/L1306 reads `p.get('name')`/`hit.get('name')`, but PantryItem stores the food name under `item_name`. Net effect: every ingredient lands in unmatched, no pantry deduction ever happens, even though the meal IS logged. 2-line fix described in status_history. (2) CALORIE AUTO-ADJUSTMENT — off-by-one cutoff in server.py:1393-1413: the cutoff is `now - 21d` and the loop excludes measurements `wts < cutoff`, but the seed timestamps written a moment earlier are microseconds older than cutoff so they get rejected at the boundary. Empirical: seeding 19d or 20d ago triggers a suggestion correctly; seeding 21d or 22d ago returns {suggestion:null}. Fix options A/B/C in status_history. All other endpoints (auth gating, T1/T5/T6 nulls, T7 apply+persist) work correctly — the bug is purely about including the boundary measurement in the comparison window. Recommend main agent apply both fixes and request retest."
+
+agent_communication:
+  - agent: "main"
+    message: "Added two new features to TRACKD: (1) AI Chef Pantry Deduction — 'Make This Meal' button on each generated recipe → modal shows what will be deducted from pantry and what's missing (in yellow with 'Not in pantry — add to shopping list?' text + Add buttons). Confirm button deducts from pantry and logs meal. (2) Auto Calorie Adjustment — dashboard card auto-shows when user has stalled (lose_fat/build_muscle within 0.3kg over 21d) or fluctuated (maintain beyond 1kg). Shows current weight, current calorie goal, suggested new goal, and macro preview with Yes/No buttons. Both flows require user confirmation — nothing auto-applies. Also built a basic Shopping List (accessible from Kitchen tab + AI Chef quick action) that integrates with the 'add to shopping list' buttons in the cook-meal modal. Please test all 3 backend feature groups."
