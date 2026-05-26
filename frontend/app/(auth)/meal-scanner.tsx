@@ -889,6 +889,36 @@ export default function MealScanner() {
                     </View>
                   ) : null}
 
+                  {/* Source badge for Restaurant official data */}
+                  {(it as any).source === 'RESTAURANT_OFFICIAL' ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <MaterialCommunityIcons name="shield-check" size={12} color={SUCCESS} />
+                      <Text style={{ color: SUCCESS, fontSize: 10, fontWeight: '700', flex: 1 }}>
+                        {(it as any).source_label || `Source: Official ${(it as any).restaurant || 'Restaurant'} Nutrition Data`}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Source badge for FAO/INFOODS Asian foods */}
+                  {(it as any).source === 'FAO_INFOODS' ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <MaterialCommunityIcons name="shield-check" size={12} color={SUCCESS} />
+                      <Text style={{ color: SUCCESS, fontSize: 10, fontWeight: '700', flex: 1 }}>
+                        {(it as any).source_label || 'Source: FAO/INFOODS Regional Database'}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Source badge for Gemini estimate (yellow warning) */}
+                  {(it as any).source === 'GEMINI_ESTIMATE' && !it.is_packaged ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <Ionicons name="warning" size={12} color={WARN} />
+                      <Text style={{ color: WARN, fontSize: 10, fontWeight: '700', flex: 1 }}>
+                        {(it as any).source_label || 'Source: Gemini Estimate — scan label for exact values'}
+                      </Text>
+                    </View>
+                  ) : null}
+
                   {/* Source badge for packaged USDA / OFF matches */}
                   {it.is_packaged && it.db_matched ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>

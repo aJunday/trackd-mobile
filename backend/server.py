@@ -2784,6 +2784,156 @@ except Exception as _e:
     logger.warning(f"Could not load GroceryDB: {_e}")
 
 
+# Load Asian foods composition (FAO/INFOODS regional databases)
+_ASIAN_PATH = Path(__file__).parent / "data" / "asian_foods.json"
+try:
+    with open(_ASIAN_PATH, "r", encoding="utf-8") as _f:
+        _ASIAN = _json.load(_f)
+    ASIAN_FOODS: List[dict] = _ASIAN.get("foods", [])
+    ASIAN_VERSION = _ASIAN.get("version", "Asian Foods v1")
+    ASIAN_SOURCE = _ASIAN.get("source", "FAO/INFOODS Regional Food Composition Tables")
+    logger.info(f"Loaded {len(ASIAN_FOODS)} Asian foods from FAO/INFOODS regional tables")
+except Exception as _e:
+    ASIAN_FOODS = []
+    ASIAN_VERSION = "missing"
+    ASIAN_SOURCE = "missing"
+    logger.warning(f"Could not load Asian foods: {_e}")
+
+
+# Load restaurant foods (official US chain nutrition disclosures)
+_RESTAURANT_PATH = Path(__file__).parent / "data" / "restaurant_foods.json"
+try:
+    with open(_RESTAURANT_PATH, "r", encoding="utf-8") as _f:
+        _REST = _json.load(_f)
+    RESTAURANT_DATA: List[dict] = _REST.get("restaurants", [])
+    # Build flat search index — list of {restaurant, item, aliases, ...}
+    RESTAURANT_ITEMS_FLAT: List[dict] = []
+    for r in RESTAURANT_DATA:
+        rname = r.get("restaurant", "")
+        rurl = r.get("source_url", "")
+        for it in r.get("items", []):
+            flat = dict(it)
+            flat["restaurant"] = rname
+            flat["source_url"] = rurl
+            flat["restaurant_lower"] = rname.lower()
+            RESTAURANT_ITEMS_FLAT.append(flat)
+    RESTAURANT_VERSION = _REST.get("version", "Restaurant Foods v1")
+    logger.info(f"Loaded {len(RESTAURANT_ITEMS_FLAT)} restaurant items across {len(RESTAURANT_DATA)} chains")
+except Exception as _e:
+    RESTAURANT_DATA = []
+    RESTAURANT_ITEMS_FLAT = []
+    RESTAURANT_VERSION = "missing"
+    logger.warning(f"Could not load restaurant foods: {_e}")
+
+
+def asian_food_lookup(name: str, cuisine_hint: Optional[str] = None) -> Optional[dict]:
+    """Fuzzy match a dish name against the Asian foods database.
+    Cuisine hint (Japanese, Korean, Chinese, Thai, Vietnamese, Pakistani, Sri Lankan, Bangladeshi)
+    narrows the search. Returns None if no good match.
+    """
+    import re as _re
+    if not name or not ASIAN_FOODS:
+        return None
+    q = name.lower().strip()
+    q_tokens = set(_re.findall(r"[a-z]{3,}", q))
+    if not q_tokens:
+        return None
+    cuisine = (cuisine_hint or "").lower().strip() if cuisine_hint else None
+
+    best = None
+    best_score = 0
+    for f in ASIAN_FOODS:
+        # Optional cuisine filter — when hint given prefer matches but don't exclude
+        f_cuisine = (f.get("cuisine") or "").lower()
+        cuisine_bonus = 2 if (cuisine and cuisine in f_cuisine) else 0
+
+        # Check name + aliases
+        candidates = [(f.get("name") or "").lower()]
+        candidates += [(a or "").lower() for a in (f.get("aliases") or [])]
+        for c in candidates:
+            if not c:
+                continue
+            # Exact match shortcut
+            if c == q:
+                return f
+            c_tokens = set(_re.findall(r"[a-z]{3,}", c))
+            overlap = len(q_tokens & c_tokens)
+            if overlap == 0:
+                continue
+            # Score: token overlap + cuisine match
+            score = overlap * 2 + cuisine_bonus
+            # Bonus if alias is fully contained in query (e.g. "pad thai")
+            if c in q or q in c:
+                score += 3
+            if score > best_score:
+                best_score = score
+                best = f
+    # Require at least overlap of 1 meaningful token
+    return best if best_score >= 2 else None
+
+
+def restaurant_food_lookup(restaurant: Optional[str], item: Optional[str]) -> Optional[dict]:
+    """Fuzzy lookup a restaurant chain menu item.
+    `restaurant` is the chain (e.g. "Starbucks", "McDonald's", "Mcdonalds").
+    `item` is the item name/variant (e.g. "Grande Caramel Macchiato", "Big Mac").
+    """
+    import re as _re
+    if not item or not RESTAURANT_ITEMS_FLAT:
+        return None
+    rq = (restaurant or "").lower().strip()
+    iq = item.lower().strip()
+    iq_tokens = set(_re.findall(r"[a-z]{3,}", iq))
+    if not iq_tokens:
+        return None
+
+    # Normalize common restaurant naming variants
+    rq_norm = (
+        rq.replace("mcdonald's", "mcdonalds")
+          .replace("mcdonald", "mcdonalds")
+          .replace("chick-fil-a", "chick-fil-a")
+          .replace("chick fil a", "chick-fil-a")
+          .replace("chickfila", "chick-fil-a")
+          .replace("domino's", "domino's")
+          .replace("dominos", "domino's")
+    )
+
+    best = None
+    best_score = 0
+    for entry in RESTAURANT_ITEMS_FLAT:
+        ent_rest = entry["restaurant_lower"]
+        # Restaurant gate: if we got a hint and it doesn't match this restaurant, skip
+        restaurant_match = False
+        if rq:
+            rn = ent_rest.replace("'", "")
+            rqn = rq_norm.replace("'", "").replace("-", " ")
+            if rn in rqn or rqn in rn or ent_rest in rq_norm or rq_norm in ent_rest:
+                restaurant_match = True
+            if not restaurant_match:
+                # Allow loose match if iq strongly identifies item
+                continue
+
+        # Build candidate strings
+        candidates = [entry["name"].lower()]
+        candidates += [(a or "").lower() for a in (entry.get("aliases") or [])]
+        for c in candidates:
+            if not c:
+                continue
+            c_tokens = set(_re.findall(r"[a-z]{3,}", c))
+            overlap = len(iq_tokens & c_tokens)
+            if overlap == 0:
+                continue
+            score = overlap * 2
+            if c in iq or iq in c:
+                score += 4
+            # Bonus if restaurant matched explicitly
+            if restaurant_match:
+                score += 3
+            if score > best_score:
+                best_score = score
+                best = entry
+    return best if best_score >= 3 else None
+
+
 def grocerydb_lookup(brand: Optional[str], product: Optional[str]) -> Optional[dict]:
     """Fuzzy text-match a packaged product in GroceryDB.
 
@@ -3025,6 +3175,76 @@ async def lookup_indian_food(name: str, portion_g: Optional[float] = None):
 async def get_cooking_methods():
     return {"methods": COOKING_METHODS}
 
+
+@scanner_router.get("/asian-foods")
+async def list_asian_foods(country: Optional[str] = None, q: Optional[str] = None, limit: int = 50):
+    """List/search Asian food composition records (FAO/INFOODS regional)."""
+    items = ASIAN_FOODS
+    if country:
+        items = [f for f in items if (f.get("country") or "").lower() == country.lower()]
+    if q:
+        ql = q.lower()
+        items = [f for f in items if ql in (f.get("name") or "").lower() or
+                 any(ql in (a or "").lower() for a in (f.get("aliases") or []))]
+    return {
+        "version": ASIAN_VERSION,
+        "source": ASIAN_SOURCE,
+        "total": len(items),
+        "foods": items[:limit],
+    }
+
+
+@scanner_router.get("/asian-foods/lookup")
+async def asian_food_lookup_endpoint(name: str, cuisine: Optional[str] = None):
+    """Fuzzy-match an Asian food name. Returns match or null."""
+    hit = asian_food_lookup(name, cuisine)
+    if not hit:
+        return {"match": None}
+    return {
+        "match": hit,
+        "source_label": f"Source: FAO/INFOODS {hit.get('country')} ({hit.get('source_db', 'national FCT')})",
+    }
+
+
+@scanner_router.get("/restaurants")
+async def list_restaurants():
+    """List all restaurant chains with item counts."""
+    return {
+        "restaurants": [
+            {"name": r.get("restaurant"), "source_url": r.get("source_url"), "item_count": len(r.get("items", []))}
+            for r in RESTAURANT_DATA
+        ],
+        "total_items": len(RESTAURANT_ITEMS_FLAT),
+    }
+
+
+@scanner_router.get("/restaurants/{restaurant_name}/items")
+async def list_restaurant_items(restaurant_name: str):
+    """List items for a specific restaurant chain."""
+    target = restaurant_name.lower().replace("'", "").replace("-", " ")
+    for r in RESTAURANT_DATA:
+        rn = (r.get("restaurant") or "").lower().replace("'", "").replace("-", " ")
+        if rn == target or rn in target or target in rn:
+            return {
+                "restaurant": r.get("restaurant"),
+                "source_url": r.get("source_url"),
+                "items": r.get("items", []),
+            }
+    raise HTTPException(status_code=404, detail=f"Restaurant '{restaurant_name}' not found")
+
+
+@scanner_router.get("/restaurants/lookup")
+async def restaurant_lookup_endpoint(restaurant: Optional[str] = None, item: str = ""):
+    """Fuzzy-match a restaurant menu item. Returns match or null."""
+    hit = restaurant_food_lookup(restaurant, item)
+    if not hit:
+        return {"match": None}
+    return {
+        "match": hit,
+        "source_label": f"Source: Official {hit.get('restaurant')} Nutrition Data",
+    }
+
+
 class GeminiScanRequest(BaseModel):
     image_base64: str
 
@@ -3213,17 +3433,18 @@ async def gemini_food_scan(
     """Scan a meal photo using Gemini 2.5 Flash with direct API key."""
     import json
 
-    prompt = """You are a precise nutrition analyst specializing in Indian cuisine (ICMR-NIN INDB 2024 reference data). Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number, "is_packaged": boolean, "brand_name": string or null, "product_name": string or null}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
+    prompt = """You are a precise nutrition analyst with expertise across global cuisines (Indian ICMR-NIN INDB 2024, Japanese MEXT, Korean NIAS, Chinese CDC, Thai INMU, Vietnamese NIN, Pakistani NIH-NIN, Sri Lankan MRI, Bangladeshi INFS reference data) and US restaurant chains. Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number, "is_packaged": boolean, "brand_name": string or null, "product_name": string or null, "is_restaurant": boolean, "restaurant_name": string or null, "restaurant_item": string or null, "size_variant": string or null, "cuisine_type": string or null, "dish_name_local": string or null}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
 
 Important guidelines:
+- If you identify a **restaurant chain item** (Starbucks, McDonald's, Chipotle, Chick-fil-A, Subway, Domino's, Taco Bell, Burger King, Panera Bread — recognizable by cup/bag/wrapper logo, in-store decor, or distinctive menu item like Big Mac, Whopper, Crunchwrap), set "is_restaurant": true and fill in: "restaurant_name" (exact chain name), "restaurant_item" (specific item name e.g. "Caramel Macchiato", "Big Mac", "Chicken Burrito Bowl"), and "size_variant" (e.g. "Grande", "Medium", "6-inch", "Large") when visible. Example: {"restaurant_name": "Starbucks", "restaurant_item": "Caramel Macchiato", "size_variant": "Grande"}.
 - If you identify a **packaged product** with a visible brand name (bottle, box, bag, can, jar, wrapper with a logo), set "is_packaged": true and fill in "brand_name" (e.g. "Kirkland Signature", "Coca-Cola", "Nature Valley") and "product_name" (e.g. "Sparkling Water Lime", "Protein Granola Bar"). The app will look up exact nutrition in product databases. Still give your best weight/calorie estimate for fallback.
-- For unpackaged/cooked foods: leave "is_packaged": false and set brand_name/product_name to null.
-- For Indian foods, use the most common recognizable English name with the Hindi name in parentheses when helpful (e.g., "Dal Tadka", "Paneer Butter Masala", "Aloo Paratha", "Chapati (Roti)", "Idli", "Sambar"). This improves database matching.
-- Use realistic Indian serving sizes: 1 roti ≈ 30-40g, 1 katori dal ≈ 150g, 1 plate rice ≈ 150g cooked, 1 idli ≈ 40g, 1 dosa ≈ 80g, 1 samosa ≈ 60g, 1 cup tea ≈ 150ml.
-- Estimate calories per INDB lab-analyzed values when possible (dal 120-140 kcal/katori, paneer 321 kcal/100g, biryani 400-490 kcal/plate, idli 58 kcal/piece, samosa 262 kcal/100g, roti 120 kcal/piece, rice 130 kcal/100g cooked).
+- If you identify **Asian cuisine** specify: "cuisine_type" (one of: Chinese, Japanese, Korean, Thai, Vietnamese, Pakistani, Sri Lankan, Bangladeshi, Indian), "name" (in English — e.g. "Pad Thai", "Bibimbap", "Pho Bo", "Mapo Tofu", "Bulgogi"), and "dish_name_local" (the local-language name if visible on menu, otherwise null).
+- For Indian foods, use the most common recognizable English name with the Hindi name in parentheses when helpful (e.g., "Dal Tadka", "Paneer Butter Masala", "Aloo Paratha", "Chapati (Roti)", "Idli", "Sambar") and set "cuisine_type": "Indian". This improves database matching.
+- For unpackaged home-cooked foods (not restaurant, not packaged): leave "is_packaged" and "is_restaurant" both false, and set brand_name/product_name/restaurant_name to null.
+- Use realistic serving sizes: 1 roti ≈ 30-40g, 1 katori dal ≈ 150g, 1 plate rice ≈ 150g cooked, 1 idli ≈ 40g, 1 dosa ≈ 80g, 1 samosa ≈ 60g, 1 cup tea ≈ 150ml, 1 sushi piece ≈ 25g, 1 sushi roll ≈ 120g, 1 ramen bowl ≈ 500g, 1 pho bowl ≈ 500g, 1 burrito bowl ≈ 500g.
 - Numbers must be plain JSON numbers, not strings.
 - "uncertain_items" lists item names whose weight estimate has low confidence.
-- "total" must equal the sum of items.
+- "total" must equal the sum of items. The app will OVERRIDE your nutrition estimates with official database values when matches are found, so just provide your best estimate.
 """
     try:
         text = await _gemini_vision(request.image_base64, prompt)
@@ -3244,15 +3465,52 @@ Important guidelines:
             override_items = []
             matched_any_indb = False
             matched_any_packaged = False
+            matched_any_restaurant = False
+            matched_any_asian = False
             any_packaged_unmatched = False  # Gemini flagged packaged but we found no DB match
             for it in data.get("items", []):
                 name = (it.get("name") or "").strip()
                 weight = float(it.get("weight_g") or 0)
                 is_packaged = bool(it.get("is_packaged"))
+                is_restaurant = bool(it.get("is_restaurant"))
                 brand_name = it.get("brand_name")
                 product_name = it.get("product_name")
+                restaurant_name = it.get("restaurant_name")
+                restaurant_item = it.get("restaurant_item")
+                size_variant = it.get("size_variant")
+                cuisine_type = it.get("cuisine_type")
+                dish_name_local = it.get("dish_name_local")
 
-                # --- Packaged-product lookup takes priority if Gemini flagged it ---
+                # --- 1. Restaurant chain lookup (highest priority if identified) ---
+                if is_restaurant and (restaurant_name or restaurant_item):
+                    # Build a richer query: include size variant when present
+                    query_item = restaurant_item or name
+                    if size_variant:
+                        query_item = f"{size_variant} {query_item}"
+                    rhit = restaurant_food_lookup(restaurant_name, query_item)
+                    if rhit:
+                        override_items.append({
+                            "name": rhit.get("name"),
+                            "restaurant": rhit.get("restaurant"),
+                            "size": rhit.get("size"),
+                            "weight_g": float(rhit.get("serving_g") or weight or 0),
+                            "calories": rhit.get("calories"),
+                            "protein_g": rhit.get("protein_g"),
+                            "carbs_g": rhit.get("carb_g"),
+                            "fat_g": rhit.get("fat_g"),
+                            "sugar_g": rhit.get("sugar_g"),
+                            "sodium_mg": rhit.get("sodium_mg"),
+                            "is_restaurant": True,
+                            "db_matched": True,
+                            "source": "RESTAURANT_OFFICIAL",
+                            "source_label": f"Source: Official {rhit.get('restaurant')} Nutrition Data",
+                            "source_url": rhit.get("source_url"),
+                        })
+                        matched_any_restaurant = True
+                        continue
+                    # Restaurant flagged but not found — fall through to other lookups
+
+                # --- 2. Packaged-product lookup ---
                 if is_packaged and (brand_name or product_name):
                     pkg = await lookup_packaged_product(brand_name, product_name)
                     if pkg and weight > 0:
@@ -3280,12 +3538,14 @@ Important guidelines:
                     it["db_matched"] = False
                     it["brand_name"] = brand_name
                     it["product_name"] = product_name
+                    it["source"] = "GEMINI_ESTIMATE"
+                    it["source_label"] = "Source: Gemini Estimate — scan label for exact values"
                     override_items.append(it)
                     continue
 
-                # --- INDB (Indian food) match ---
+                # --- 3. INDB (Indian food) match ---
                 indb_match = indb_lookup(name) if name else None
-                if indb_match and weight > 0:
+                if indb_match and weight > 0 and (not cuisine_type or cuisine_type.lower() in ("indian", "")):
                     formatted = format_indb_result(indb_match, portion_g=weight)
                     matched_any_indb = True
                     override_items.append({
@@ -3301,8 +3561,38 @@ Important guidelines:
                         "source": "INDB_2024",
                         "source_label": "Source: ICMR-NIN INDB 2024",
                     })
-                else:
-                    override_items.append(it)
+                    continue
+
+                # --- 4. Asian regional food lookup (FAO/INFOODS national tables) ---
+                asian_hit = asian_food_lookup(name, cuisine_type) if name else None
+                if asian_hit and weight > 0:
+                    ratio = weight / 100.0
+                    p100 = asian_hit.get("per_100g", {})
+                    country = asian_hit.get("country", "")
+                    override_items.append({
+                        "name": asian_hit.get("name"),
+                        "dish_name_local": dish_name_local,
+                        "country": country,
+                        "cuisine": asian_hit.get("cuisine"),
+                        "food_code": asian_hit.get("food_code"),
+                        "weight_g": weight,
+                        "calories": round(float(p100.get("calories", 0)) * ratio),
+                        "protein_g": round(float(p100.get("protein_g", 0)) * ratio, 1),
+                        "carbs_g": round(float(p100.get("carb_g", 0)) * ratio, 1),
+                        "fat_g": round(float(p100.get("fat_g", 0)) * ratio, 1),
+                        "fiber_g": round(float(p100.get("fiber_g", 0)) * ratio, 1),
+                        "sodium_mg": round(float(p100.get("sodium_mg", 0)) * ratio, 1),
+                        "source": "FAO_INFOODS",
+                        "source_label": f"Source: FAO/INFOODS {country} ({asian_hit.get('source_db', 'national FCT')})",
+                    })
+                    matched_any_asian = True
+                    continue
+
+                # --- 5. Fallback — Gemini estimate ---
+                it["source"] = "GEMINI_ESTIMATE"
+                it["source_label"] = "Source: Gemini Estimate — scan label for exact values"
+                it["db_matched"] = False
+                override_items.append(it)
 
             total = {
                 "calories": round(sum(float(i.get("calories", 0) or 0) for i in override_items)),
@@ -3326,8 +3616,14 @@ Important guidelines:
                 "indb_matched": matched_any_indb,
                 "packaged_matched": matched_any_packaged,
                 "packaged_unmatched": any_packaged_unmatched,
+                "restaurant_matched": matched_any_restaurant,
+                "asian_matched": matched_any_asian,
                 "has_packaged": matched_any_packaged or any_packaged_unmatched,
-                "source": INDB_SOURCE if matched_any_indb else None,
+                "source": INDB_SOURCE if matched_any_indb else (
+                    "Restaurant Official" if matched_any_restaurant else (
+                        ASIAN_SOURCE if matched_any_asian else None
+                    )
+                ),
             }
         except json.JSONDecodeError:
             logger.error(f"Gemini food scan parse error: {text[:500]}")
