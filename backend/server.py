@@ -2702,6 +2702,66 @@ async def delete_template(
     
     return {"message": "Template deleted"}
 
+
+@templates_router.put("/{template_id}")
+async def update_template(
+    template_id: str,
+    template_data: dict,
+    user: User = Depends(get_current_user),
+):
+    """Update an existing user template (rename + exercises + notes etc)."""
+    patch = {}
+    if "name" in template_data:
+        patch["name"] = template_data["name"]
+    if "exercises" in template_data:
+        patch["exercises"] = template_data["exercises"]
+    if not patch:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = await db.workout_templates.update_one(
+        {"template_id": template_id, "user_id": user.user_id},
+        {"$set": patch},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    updated = await db.workout_templates.find_one(
+        {"template_id": template_id, "user_id": user.user_id},
+        {"_id": 0},
+    )
+    return updated
+
+
+@templates_router.post("/{template_id}/duplicate")
+async def duplicate_template(
+    template_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Duplicate an existing user template (counts against the same custom/copied
+    quota as the original)."""
+    src = await db.workout_templates.find_one(
+        {"template_id": template_id, "user_id": user.user_id},
+        {"_id": 0},
+    )
+    if not src:
+        raise HTTPException(status_code=404, detail="Template not found")
+    # Enforce same quota as save_template
+    existing = await db.workout_templates.find({"user_id": user.user_id}).to_list(50)
+    custom_used = sum(1 for t in existing if not t.get("is_copied"))
+    copied_used = sum(1 for t in existing if t.get("is_copied"))
+    is_copied = bool(src.get("is_copied"))
+    if is_copied and copied_used >= 3:
+        raise HTTPException(status_code=400, detail="Copied template limit (3) reached")
+    if (not is_copied) and custom_used >= 3:
+        raise HTTPException(status_code=400, detail="Custom template limit (3) reached")
+
+    dup = {
+        **src,
+        "template_id": f"tmpl_{uuid.uuid4().hex[:12]}",
+        "name": f"{src.get('name', 'My Template')} Copy",
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.workout_templates.insert_one(dup)
+    return dup
+
 # ==================== PLATE CALCULATOR ====================
 
 PLATE_WEIGHTS_KG = [25, 20, 15, 10, 5, 2.5, 1.25]

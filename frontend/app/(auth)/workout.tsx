@@ -391,6 +391,118 @@ export default function WorkoutScreen() {
     }
   };
 
+  // ---------- Custom template menu (Edit / Rename / Duplicate / Delete) ----------
+  const openTemplateMenu = (t: Template) => {
+    Alert.alert(
+      t.name,
+      undefined,
+      [
+        { text: 'Start Workout', onPress: () => setPreviewTemplate(t) },
+        {
+          text: 'Edit Template',
+          onPress: () =>
+            router.push({ pathname: '/(auth)/template-builder', params: { id: t.template_id } } as any),
+        },
+        {
+          text: 'Rename',
+          onPress: () => promptRenameTemplate(t),
+        },
+        {
+          text: 'Duplicate',
+          onPress: () => duplicateTemplate(t),
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => confirmDeleteTemplate(t),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const promptRenameTemplate = (t: Template) => {
+    if (Platform.OS === 'ios' && (Alert as any).prompt) {
+      (Alert as any).prompt(
+        'Rename template',
+        '',
+        async (newName: string) => {
+          const n = (newName || '').trim();
+          if (!n) return;
+          await renameTemplate(t.template_id, n);
+        },
+        'plain-text',
+        t.name,
+      );
+    } else {
+      // Web/Android fallback: use a synchronous prompt (web) or skip (android)
+      // For now use a simple JS prompt available in expo web; on Android show alert with default suffix.
+      // eslint-disable-next-line no-alert
+      const newName = typeof window !== 'undefined' && (window as any).prompt
+        ? (window as any).prompt('Rename template', t.name)
+        : null;
+      if (newName && newName.trim() && newName.trim() !== t.name) {
+        renameTemplate(t.template_id, newName.trim());
+      }
+    }
+  };
+
+  const renameTemplate = async (template_id: string, newName: string) => {
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/templates/${template_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (r.ok) loadInitial();
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  const duplicateTemplate = async (t: Template) => {
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/templates/${t.template_id}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        Alert.alert('Cannot duplicate', data?.detail || 'Quota reached.');
+        return;
+      }
+      loadInitial();
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  const confirmDeleteTemplate = (t: Template) => {
+    Alert.alert(
+      'Delete template?',
+      `"${t.name}" will be permanently removed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await fetch(`${BACKEND_URL}/api/templates/${t.template_id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${sessionToken}` },
+              });
+              loadInitial();
+            } catch (e) {
+              console.warn(e);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   // ---------- Workout lifecycle ----------
   const startEmptyWorkout = async () => {
     haptic('medium');
@@ -780,12 +892,34 @@ export default function WorkoutScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={styles.h1}>Workout</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={styles.h1}>Workout</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/(auth)/template-builder' as any)}
+              style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: ACCENT, justifyContent: 'center', alignItems: 'center' }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={22} color="#000" />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.h2}>Pick a template or start fresh.</Text>
 
           <TouchableOpacity style={styles.startBtn} onPress={startEmptyWorkout} activeOpacity={0.85}>
             <Ionicons name="play" size={22} color="#000" />
             <Text style={styles.startBtnText}>Start Empty Workout</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+              paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT,
+              borderStyle: 'dashed', backgroundColor: 'rgba(245,166,35,0.06)', marginTop: 10,
+            }}
+            onPress={() => router.push('/(auth)/template-builder' as any)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add-circle-outline" size={20} color={ACCENT} />
+            <Text style={{ color: ACCENT, fontWeight: '800', fontSize: 14 }}>Create Template</Text>
           </TouchableOpacity>
 
           {/* Pre-Made Templates */}
@@ -846,6 +980,16 @@ export default function WorkoutScreen() {
                     </View>
                     <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
                     <Text style={styles.tplCardMeta}>{t.exercises.length} ex</Text>
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        openTemplateMenu(t);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{ position: 'absolute', top: 8, right: 8, padding: 4 }}
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
+                    </TouchableOpacity>
                   </TouchableOpacity>
                 ))}
               </View>

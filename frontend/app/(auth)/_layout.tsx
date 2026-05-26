@@ -137,6 +137,7 @@ export default function AuthLayout() {
       <Tabs.Screen name="exercise-detail" options={{ href: null }} />
       <Tabs.Screen name="indian-foods" options={{ href: null }} />
       <Tabs.Screen name="shopping-list" options={{ href: null }} />
+      <Tabs.Screen name="template-builder" options={{ href: null }} />
     </Tabs>
         <ActiveWorkoutBanner />
         <DailyWarningIntro onDone={() => {}} />
