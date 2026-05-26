@@ -15,8 +15,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
-const SUCCESS_COLOR = '#00FF87';
+const ACCENT_COLOR = '#F5A623';
+const SUCCESS_COLOR = '#2ECC71';
 const WARNING_COLOR = '#FF8C00';
 const MISSING_YELLOW = '#FFD93D';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    backgroundColor: 'rgba(245,166,35,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   },
   countButtonActive: {
     borderColor: ACCENT_COLOR,
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
   },
   countText: {
     fontSize: 20,
@@ -871,7 +871,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   ingredientChip: {
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
@@ -947,7 +947,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
@@ -1053,7 +1053,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   modalRowBadge: {
-    backgroundColor: 'rgba(0, 255, 135, 0.15)',
+    backgroundColor: 'rgba(46,204,113,0.15)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,

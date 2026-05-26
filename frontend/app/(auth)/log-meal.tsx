@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
+const ACCENT_COLOR = '#F5A623';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface MealItem {

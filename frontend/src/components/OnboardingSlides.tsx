@@ -30,21 +30,24 @@ const SLIDES = [
     id: 'rep',
     title: 'Log every rep.',
     subtitle: 'Strong-style workout logger with running timer, smart rest timer, plate calculator and auto-PR detection.',
-    icon: 'barbell-outline' as const,
+    icon: 'dumbbell' as const,
+    iconSet: 'mc' as const,
     bg: ['#0D0D0F', '#1A0F00'],
   },
   {
     id: 'meal',
     title: 'Scan every meal.',
     subtitle: 'Snap a photo, scan a barcode, or read the label. Gemini AI estimates portions, macros, and confidence.',
-    icon: 'scan-outline' as const,
+    icon: 'camera-outline' as const,
+    iconSet: 'ion' as const,
     bg: ['#0D0D0F', '#0F1A0D'],
   },
   {
     id: 'science',
     title: 'Built on real science.',
     subtitle: 'Mifflin-St Jeor TDEE, Epley 1RM, peer-reviewed sport programs across 18 disciplines.',
-    icon: 'school-outline' as const,
+    icon: 'flask-outline' as const,
+    iconSet: 'ion' as const,
     bg: ['#0D0D0F', '#1A0D1A'],
   },
 ];
@@ -90,6 +93,9 @@ export default function OnboardingSlides({ onSignIn, loading }: Props) {
         <View style={styles.brand}>
           <Text style={styles.brandText}>TRACKD</Text>
           <View style={styles.brandLine} />
+          {step === 0 && (
+            <Text style={styles.tagline}>Track everything. Gain everything.</Text>
+          )}
         </View>
         {step < SLIDES.length - 1 && (
           <TouchableOpacity onPress={skip} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
@@ -101,7 +107,11 @@ export default function OnboardingSlides({ onSignIn, loading }: Props) {
       {/* Body */}
       <Animated.View style={[styles.body, { opacity: fade }]}>
         <View style={styles.iconCircle}>
-          <Ionicons name={slide.icon} size={80} color={ACCENT} />
+          {slide.iconSet === 'mc' ? (
+            <MaterialCommunityIcons name={slide.icon as any} size={80} color={ACCENT} />
+          ) : (
+            <Ionicons name={slide.icon as any} size={80} color={ACCENT} />
+          )}
         </View>
         <Text style={styles.title}>{slide.title}</Text>
         <Text style={styles.subtitle}>{slide.subtitle}</Text>
@@ -166,6 +176,7 @@ const styles = StyleSheet.create({
   brand: { alignItems: 'flex-start' },
   brandText: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 3 },
   brandLine: { width: 28, height: 2, backgroundColor: ACCENT, marginTop: 4, borderRadius: 1 },
+  tagline: { color: TEXT_MUTED, fontSize: 12, fontWeight: '500', marginTop: 6, letterSpacing: 0.3 },
   skipText: { color: TEXT_MUTED, fontSize: 14, fontWeight: '600' },
 
   body: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },

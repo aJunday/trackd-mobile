@@ -5,8 +5,8 @@ import { Platform, View, StyleSheet } from 'react-native';
 import { useAuth } from '../_layout';
 
 const ACCENT = '#F5A623';
-const TAB_BG = '#0A0A0A';
-const INACTIVE = '#666';
+const TAB_BG = 'rgba(10,10,10,0.94)';
+const INACTIVE = '#8E8E93';
 
 function TabIcon({
   name,
@@ -45,15 +45,26 @@ export default function AuthLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: TAB_BG,
-          borderTopColor: '#1A1A1A',
-          borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 92 : 72,
-          paddingBottom: Platform.OS === 'ios' ? 32 : 12,
-          paddingTop: 10,
+          borderTopColor: '#2C2C2E',
+          borderTopWidth: 0.5,
+          height: Platform.OS === 'ios' ? 96 : 78,
+          paddingBottom: Platform.OS === 'ios' ? 32 : 14,
+          paddingTop: 12,
+          // subtle frosted-glass shadow above the bar
+          shadowColor: '#000',
+          shadowOpacity: 0.35,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: -3 },
+          elevation: 12,
         },
         tabBarActiveTintColor: ACCENT,
         tabBarInactiveTintColor: INACTIVE,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 2,
+          letterSpacing: 0.3,
+        },
       }}
     >
       <Tabs.Screen

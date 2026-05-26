@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     marginBottom: 10,
   },
-  optionCardActive: { borderColor: ACCENT, backgroundColor: 'rgba(0,212,255,0.08)' },
+  optionCardActive: { borderColor: ACCENT, backgroundColor: 'rgba(245,166,35,0.08)' },
   optionLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   optionText: { marginLeft: 14, flex: 1 },
   optionLabel: { color: '#fff', fontSize: 16, fontWeight: '700' },
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     gap: 8,
   },
-  sportCardActive: { borderColor: ACCENT, backgroundColor: 'rgba(0,212,255,0.08)' },
+  sportCardActive: { borderColor: ACCENT, backgroundColor: 'rgba(245,166,35,0.08)' },
   sportLabel: { color: '#bbb', fontSize: 14, fontWeight: '600', textAlign: 'center' },
   sportLabelActive: { color: '#fff' },
   previewCard: {

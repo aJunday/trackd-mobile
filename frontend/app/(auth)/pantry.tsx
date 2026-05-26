@@ -15,8 +15,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
-const SUCCESS_COLOR = '#00FF87';
+const ACCENT_COLOR = '#F5A623';
+const SUCCESS_COLOR = '#2ECC71';
 const WARNING_COLOR = '#FF8C00';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
   },
   itemNutrition: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
   useButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,

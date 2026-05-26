@@ -19,7 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '../_layout';
 
 const ACCENT = '#F5A623';
-const SUCCESS = '#00FF87';
+const SUCCESS = '#2ECC71';
 const MISSING_YELLOW = '#FFD93D';
 const BG = '#0D0D0F';
 const CARD = '#161618';

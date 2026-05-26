@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
+const ACCENT_COLOR = '#F5A623';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface Workout {
@@ -162,7 +162,7 @@ export default function HistoryScreen() {
                     </View>
                     {workout.completed_at ? (
                       <View style={styles.completedBadge}>
-                        <Ionicons name="checkmark" size={16} color="#00FF87" />
+                        <Ionicons name="checkmark" size={16} color="#2ECC71" />
                       </View>
                     ) : (
                       <View style={styles.inProgressBadge}>
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(0, 255, 135, 0.2)',
+    backgroundColor: 'rgba(46,204,113,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   exercisePreviewText: {
     fontSize: 12,
     color: ACCENT_COLOR,
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,

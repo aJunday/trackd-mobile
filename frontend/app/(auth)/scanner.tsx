@@ -18,8 +18,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../_layout';
 
-const ACCENT_COLOR = '#00D4FF';
-const SUCCESS_COLOR = '#00FF87';
+const ACCENT_COLOR = '#F5A623';
+const SUCCESS_COLOR = '#2ECC71';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface ScannedItem {
@@ -680,7 +680,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   labelButtonSecondary: {
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     borderWidth: 2,
     borderColor: ACCENT_COLOR,
   },

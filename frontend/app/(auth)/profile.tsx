@@ -15,7 +15,7 @@ import { useAuth } from '../_layout';
 import { recommendSplit, getAllSplits, getDayName, DaysPerWeek, Goal } from '../../src/data/splits';
 import WeightLogSection from '../../src/components/WeightLogSection';
 
-const ACCENT_COLOR = '#00D4FF';
+const ACCENT_COLOR = '#F5A623';
 const GOLD = '#F5A623';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     borderWidth: 2,
     borderColor: ACCENT_COLOR,
     justifyContent: 'center',
@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   goalTypeBadge: {
-    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    backgroundColor: 'rgba(245,166,35,0.15)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: 'rgba(0, 212, 255, 0.1)',
+    backgroundColor: 'rgba(245,166,35,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
