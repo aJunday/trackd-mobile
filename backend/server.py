@@ -2685,6 +2685,7 @@ async def save_template(
         payload["source_template_id"] = template_data["source_template_id"]
 
     await db.workout_templates.insert_one(payload)
+    payload.pop("_id", None)
     return payload
 
 @templates_router.delete("/{template_id}")
@@ -2760,6 +2761,7 @@ async def duplicate_template(
         "created_at": datetime.now(timezone.utc),
     }
     await db.workout_templates.insert_one(dup)
+    dup.pop("_id", None)
     return dup
 
 # ==================== PLATE CALCULATOR ====================
