@@ -1192,6 +1192,303 @@ async def scan_nutrition_label(
 class MealSuggestionRequest(BaseModel):
     count: int = 3  # Number of meals to suggest
 
+
+# ---------- AI Chef: cook a meal (pantry deduction + meal log) ----------
+class CookMealIngredient(BaseModel):
+    text: str  # raw ingredient string from the recipe
+    quantity: Optional[float] = None  # optional parsed qty
+    unit: Optional[str] = None        # optional unit (g, ml, pc, cup...)
+
+
+class CookMealRequest(BaseModel):
+    meal_name: str
+    ingredients: List[str]            # raw recipe ingredient strings
+    macros: dict                      # { calories, protein, carbs, fats }
+    meal_type: Optional[str] = "lunch"
+    dry_run: bool = True              # true → preview only, false → apply
+
+
+def _parse_ingredient(text: str) -> dict:
+    """Best-effort parse: '150g chicken breast' → {qty:150, unit:'g', name:'chicken breast'}.
+
+    Handles patterns:
+      '150g chicken breast'  '2 cups rice'  '1 tbsp olive oil'  '2 eggs'  'salt'
+    Falls back to {qty: 1, unit: '', name: <text>} for anything weird.
+    """
+    s = (text or "").strip().lower()
+    if not s:
+        return {"qty": 1, "unit": "", "name": ""}
+    # Try: number unit name  OR  number name
+    m = re.match(r"^([\d.,/]+)\s*([a-z]+)?\s+(.+)$", s)
+    qty = 1.0
+    unit = ""
+    name = s
+    if m:
+        raw_n = m.group(1).replace(",", ".")
+        try:
+            # very rough fraction support 1/2 etc.
+            if "/" in raw_n:
+                a, b = raw_n.split("/", 1)
+                qty = float(a) / float(b)
+            else:
+                qty = float(raw_n)
+        except Exception:
+            qty = 1.0
+        unit = (m.group(2) or "").strip()
+        name = (m.group(3) or s).strip()
+        # If "unit" is actually part of the food name (e.g. "2 eggs"), unmark it
+        if unit and unit not in {"g", "kg", "ml", "l", "tsp", "tbsp", "cup", "cups", "oz", "lb", "pc", "piece", "pieces", "slice", "slices"}:
+            name = f"{unit} {name}".strip()
+            unit = ""
+    # Strip parenthetical hints
+    name = re.sub(r"\s*\([^)]*\)", "", name).strip()
+    return {"qty": qty, "unit": unit, "name": name}
+
+
+def _match_pantry_item(parsed_name: str, pantry: List[dict]) -> Optional[dict]:
+    """Find the best pantry item for a parsed ingredient name (token-overlap).
+
+    Returns the pantry doc or None.
+    """
+    if not parsed_name or not pantry:
+        return None
+    tokens = set(re.findall(r"[a-z]{3,}", parsed_name.lower()))
+    if not tokens:
+        return None
+    best = None
+    best_score = 0
+    for p in pantry:
+        pn = (p.get("name") or "").lower()
+        p_tokens = set(re.findall(r"[a-z]{3,}", pn))
+        overlap = len(tokens & p_tokens)
+        if overlap > best_score and overlap > 0:
+            best = p
+            best_score = overlap
+    return best
+
+
+@pantry_router.post("/cook-meal")
+async def cook_meal(
+    req: CookMealRequest,
+    user: User = Depends(get_current_user),
+):
+    """Match recipe ingredients against pantry. In `dry_run` returns a preview
+    (matched + unmatched). With `dry_run=false`, deducts the matched items
+    from pantry and logs the meal to today's nutrition log.
+    """
+    pantry = await db.pantry.find({"user_id": user.user_id}, {"_id": 0}).to_list(200)
+    matched: List[dict] = []
+    unmatched: List[dict] = []
+    for raw in req.ingredients:
+        parsed = _parse_ingredient(raw)
+        if not parsed["name"]:
+            continue
+        hit = _match_pantry_item(parsed["name"], pantry)
+        if hit:
+            # Determine deduction qty — if pantry stores grams and parsed unit is g/ml,
+            # subtract parsed qty; otherwise subtract 1 unit.
+            p_unit = (hit.get("unit") or "").lower()
+            i_unit = (parsed.get("unit") or "").lower()
+            deduction = parsed["qty"]
+            if p_unit and i_unit and p_unit != i_unit:
+                # Unit mismatch → fall back to 1 unit of pantry inventory
+                deduction = 1
+            elif not i_unit:
+                deduction = 1
+            # Don't deduct more than what's available
+            available = float(hit.get("quantity") or 0)
+            deduct_final = min(deduction, available) if available > 0 else deduction
+            matched.append({
+                "raw": raw,
+                "parsed_name": parsed["name"],
+                "pantry_item_id": hit.get("item_id"),
+                "pantry_name": hit.get("name"),
+                "pantry_unit": hit.get("unit"),
+                "available": available,
+                "deduct": round(deduct_final, 2),
+                "after": round(max(0.0, available - deduct_final), 2),
+            })
+        else:
+            unmatched.append({
+                "raw": raw,
+                "parsed_name": parsed["name"],
+                "quantity": parsed["qty"],
+                "unit": parsed["unit"],
+            })
+
+    if req.dry_run:
+        return {
+            "success": True,
+            "dry_run": True,
+            "matched": matched,
+            "unmatched": unmatched,
+        }
+
+    # Apply: deduct each matched + log meal
+    for m in matched:
+        if not m.get("pantry_item_id"):
+            continue
+        new_qty = max(0.0, m["available"] - m["deduct"])
+        if new_qty <= 0:
+            await db.pantry.delete_one({"item_id": m["pantry_item_id"]})
+        else:
+            await db.pantry.update_one(
+                {"item_id": m["pantry_item_id"]},
+                {"$set": {"quantity": new_qty, "last_used": datetime.now(timezone.utc)}},
+            )
+
+    # Log meal
+    mtype = (req.meal_type or "lunch").lower()
+    item = {
+        "item_id": f"chef_{uuid.uuid4().hex[:10]}",
+        "name": req.meal_name,
+        "calories": float(req.macros.get("calories") or 0),
+        "protein": float(req.macros.get("protein") or 0),
+        "carbs": float(req.macros.get("carbs") or 0),
+        "fats": float(req.macros.get("fats") or 0),
+        "quantity": 1,
+        "unit": "serving",
+    }
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    meal_doc = {
+        "meal_id": f"meal_{uuid.uuid4().hex[:10]}",
+        "user_id": user.user_id,
+        "date": today_str,
+        "meal_type": mtype,
+        "items": [item],
+        "total_calories": item["calories"],
+        "total_protein": item["protein"],
+        "total_carbs": item["carbs"],
+        "total_fats": item["fats"],
+        "source": "ai_chef",
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.meals.insert_one(meal_doc)
+
+    return {
+        "success": True,
+        "dry_run": False,
+        "matched": matched,
+        "unmatched": unmatched,
+        "meal_logged": True,
+    }
+
+
+# ---------- Coach: calorie-goal adjustment based on weight trend ----------
+@coach_router.get("/calorie-adjustment")
+async def coach_calorie_adjustment(user: User = Depends(get_current_user)):
+    """If the user is on lose_fat/build_muscle and their weight has stalled
+    for 21 days (Δ ≤ 0.3 kg), suggest a new calorie target.
+    """
+    if not user.goal_type or user.goal_type not in {"lose_fat", "build_muscle"}:
+        return {"suggestion": None}
+
+    # Normalize datetimes to naive UTC for comparison (Mongo stores naive)
+    def _naive(dt):
+        if dt is None:
+            return None
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=21)).replace(tzinfo=None)
+    weights = await db.measurements.find(
+        {"user_id": user.user_id, "weight_kg": {"$ne": None}},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(60)
+    if len(weights) < 2:
+        return {"suggestion": None}
+
+    latest = weights[0]
+    latest_ts = _naive(latest.get("created_at"))
+    earliest_in_window = None
+    earliest_ts = None
+    for w in weights:
+        wts = _naive(w.get("created_at"))
+        if wts and wts < cutoff:
+            break
+        earliest_in_window = w
+        earliest_ts = wts
+    if not earliest_in_window or earliest_ts is None or latest_ts is None:
+        return {"suggestion": None}
+    span_days = (latest_ts - earliest_ts).days
+    if span_days < 18:
+        return {"suggestion": None}
+
+    delta = float(latest["weight_kg"]) - float(earliest_in_window["weight_kg"])
+    if abs(delta) > 0.3:
+        return {"suggestion": None}
+
+    # Recompute TDEE from current weight + existing user inputs
+    if not all([user.height_cm, user.age, user.biological_sex, user.activity_level]):
+        return {"suggestion": None}
+    new_weight = float(latest["weight_kg"])
+    new_tdee = calculate_tdee(new_weight, user.height_cm, user.age, user.biological_sex, user.activity_level)
+
+    if user.goal_type == "lose_fat":
+        proposed_calories = max(1200, new_tdee - 500)
+        direction = "reduce"
+        copy = (
+            f"Your progress has slowed. Based on your current weight of "
+            f"{new_weight:.1f}kg your new maintenance is approximately {new_tdee} cal. "
+            f"Would you like to reduce your calorie goal to {proposed_calories} cal to continue losing weight?"
+        )
+    else:  # build_muscle
+        proposed_calories = new_tdee + 250 + 100  # small bump of 100–150 above the previous surplus
+        direction = "increase"
+        copy = (
+            f"You're not gaining weight. Based on your current weight of "
+            f"{new_weight:.1f}kg your new maintenance is approximately {new_tdee} cal. "
+            f"Would you like to increase your calorie goal to {proposed_calories} cal to continue building muscle?"
+        )
+
+    protein, carbs, fats = calculate_macros(new_weight, new_tdee, proposed_calories)
+    return {
+        "suggestion": {
+            "direction": direction,
+            "goal_type": user.goal_type,
+            "current_weight_kg": new_weight,
+            "current_calorie_goal": user.goal_calories,
+            "current_tdee": user.tdee or new_tdee,
+            "new_tdee": new_tdee,
+            "proposed_calories": proposed_calories,
+            "proposed_protein": protein,
+            "proposed_carbs": carbs,
+            "proposed_fats": fats,
+            "copy": copy,
+            "delta_kg_21d": round(delta, 2),
+        }
+    }
+
+
+class ApplyAdjustmentRequest(BaseModel):
+    calories: int
+    protein: int
+    carbs: int
+    fats: int
+    tdee: Optional[float] = None
+    weight_kg: Optional[float] = None
+
+
+@coach_router.post("/apply-calorie-adjustment")
+async def apply_calorie_adjustment(
+    req: ApplyAdjustmentRequest,
+    user: User = Depends(get_current_user),
+):
+    """Apply the suggested calorie/macro adjustment to the user's profile."""
+    patch = {
+        "goal_calories": int(req.calories),
+        "goal_protein": int(req.protein),
+        "goal_carbs": int(req.carbs),
+        "goal_fats": int(req.fats),
+    }
+    if req.tdee:
+        patch["tdee"] = float(req.tdee)
+    if req.weight_kg:
+        patch["weight_kg"] = float(req.weight_kg)
+    await db.users.update_one({"user_id": user.user_id}, {"$set": patch})
+    return {"success": True, **patch}
+
+
+
 @pantry_router.post("/ai-chef/suggest")
 async def get_ai_meal_suggestions(
     request: MealSuggestionRequest,
