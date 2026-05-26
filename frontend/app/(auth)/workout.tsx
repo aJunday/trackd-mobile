@@ -14,6 +14,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Pressable,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -24,6 +25,8 @@ import { useAuth } from '../_layout';
 import MuscleMap, { MuscleEntry } from '../../src/components/MuscleMap';
 import ScienceBadge from '../../src/components/ScienceBadge';
 import { authFetch } from '../../src/utils/authFetch';
+import ExerciseQuickDetail from '../../src/components/ExerciseQuickDetail';
+import ExerciseOptionsMenu from '../../src/components/ExerciseOptionsMenu';
 import { TEMPLATE_RESEARCH } from '../../src/data/research';
 import { Storage } from '../../src/utils/storage';
 
@@ -150,7 +153,13 @@ export default function WorkoutScreen() {
     day?: number;
   } | null>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
-  const [templates, setTemplates] = useState<{ presets: Template[]; user_templates: Template[] }>({
+  const [templates, setTemplates] = useState<{
+    presets: Template[];
+    user_templates: Template[];
+    custom_templates?: Template[];
+    copied_templates?: Template[];
+    limits?: { max_custom: number; max_copied: number; custom_used: number; copied_used: number };
+  }>({
     presets: [],
     user_templates: [],
   });
@@ -159,6 +168,7 @@ export default function WorkoutScreen() {
 
   // Modals
   const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
   const [showPlateCalc, setShowPlateCalc] = useState<{ open: boolean; weight: number }>({
     open: false,
@@ -571,6 +581,25 @@ export default function WorkoutScreen() {
       /* ignore */
     }
     const id = `e_${Date.now()}`;
+    // Replace mode: swap an existing exercise, keep its sets/structure
+    if (replaceTargetId) {
+      setActive({
+        ...active,
+        exercises: active.exercises.map((e) =>
+          e.id === replaceTargetId
+            ? {
+                ...e,
+                exercise_name: name,
+                muscle_group,
+                prev,
+              }
+            : e
+        ),
+      });
+      setReplaceTargetId(null);
+      setShowExercisePicker(false);
+      return;
+    }
     setActive({
       ...active,
       exercises: [
@@ -771,32 +800,67 @@ export default function WorkoutScreen() {
 
           {/* My Templates */}
           <View style={styles.sectionHeader}>
-            <Text style={styles.section}>My Templates</Text>
+            <Text style={styles.section}>
+              My Templates ({templates.limits?.custom_used ?? (templates.custom_templates || templates.user_templates.filter((t: any) => !t.is_copied)).length}/3)
+            </Text>
           </View>
-          {templates.user_templates.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <MaterialCommunityIcons name="bookmark-outline" size={28} color={TEXT_MUTED} />
-              <Text style={styles.emptyText}>No saved templates yet</Text>
-              <Text style={styles.emptySub}>Finish a workout and save it as a template.</Text>
-            </View>
-          ) : (
-            <View style={styles.templateGrid}>
-              {templates.user_templates.map((t) => (
-                <TouchableOpacity
-                  key={t.template_id}
-                  style={styles.templateCard}
-                  activeOpacity={0.85}
-                  onPress={() => setPreviewTemplate(t)}
-                >
-                  <View style={styles.tplIconWrap}>
-                    <Ionicons name="bookmark" size={20} color={ACCENT} />
-                  </View>
-                  <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
-                  <Text style={styles.tplCardMeta}>{t.exercises.length} ex</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          {(() => {
+            const customs = templates.custom_templates ?? templates.user_templates.filter((t: any) => !t.is_copied);
+            return customs.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <MaterialCommunityIcons name="bookmark-outline" size={28} color={TEXT_MUTED} />
+                <Text style={styles.emptyText}>No saved templates yet</Text>
+                <Text style={styles.emptySub}>Finish a workout and save it as a template. Max 3.</Text>
+              </View>
+            ) : (
+              <View style={styles.templateGrid}>
+                {customs.map((t: Template) => (
+                  <TouchableOpacity
+                    key={t.template_id}
+                    style={styles.templateCard}
+                    activeOpacity={0.85}
+                    onPress={() => setPreviewTemplate(t)}
+                  >
+                    <View style={styles.tplIconWrap}>
+                      <Ionicons name="bookmark" size={20} color={ACCENT} />
+                    </View>
+                    <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
+                    <Text style={styles.tplCardMeta}>{t.exercises.length} ex</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })()}
+
+          {/* Copied Templates */}
+          {(() => {
+            const copies = templates.copied_templates ?? templates.user_templates.filter((t: any) => t.is_copied);
+            const used = templates.limits?.copied_used ?? copies.length;
+            if (used === 0) return null;
+            return (
+              <>
+                <View style={[styles.sectionHeader, { marginTop: 22 }]}>
+                  <Text style={styles.section}>Copied Templates ({used}/3)</Text>
+                </View>
+                <View style={styles.templateGrid}>
+                  {copies.map((t: Template) => (
+                    <TouchableOpacity
+                      key={t.template_id}
+                      style={styles.templateCard}
+                      activeOpacity={0.85}
+                      onPress={() => setPreviewTemplate(t)}
+                    >
+                      <View style={styles.tplIconWrap}>
+                        <Ionicons name="copy" size={20} color={ACCENT} />
+                      </View>
+                      <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
+                      <Text style={styles.tplCardMeta}>{t.exercises.length} ex</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            );
+          })()}
 
           <Text style={[styles.section, { marginTop: 24 }]}>Recent Workouts</Text>
           {recentWorkouts.length === 0 ? (
@@ -828,6 +892,24 @@ export default function WorkoutScreen() {
           onStart={(tmpl) => {
             setPreviewTemplate(null);
             startFromTemplate(tmpl);
+          }}
+          onEdit={(tmpl) => {
+            // "Edit mode" = start the template, then user can use the ... menu on
+            // each exercise to add/remove/replace before logging the first set.
+            Alert.alert(
+              'Edit template',
+              'Starts the workout in edit mode. You can add, remove, replace exercises or change rest timers using the ⋯ menu on each exercise card before logging any sets.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Continue',
+                  onPress: () => {
+                    setPreviewTemplate(null);
+                    startFromTemplate(tmpl);
+                  },
+                },
+              ]
+            );
           }}
         />
       </SafeAreaView>
@@ -886,6 +968,57 @@ export default function WorkoutScreen() {
                   params: { name: ex.exercise_name },
                 })
               }
+              onAddNote={(note) => {
+                if (!active) return;
+                setActive({
+                  ...active,
+                  exercises: active.exercises.map((e: any) =>
+                    e.id === ex.id ? { ...e, note } : e
+                  ),
+                });
+              }}
+              onAddWarmupSets={() => {
+                if (!active) return;
+                const newWarmups: SetEntry[] = [
+                  { id: `w_${Date.now()}_a`, weight: 0, reps: 0, completed: false, is_warmup: true } as any,
+                  { id: `w_${Date.now()}_b`, weight: 0, reps: 0, completed: false, is_warmup: true } as any,
+                ];
+                setActive({
+                  ...active,
+                  exercises: active.exercises.map((e: any) =>
+                    e.id === ex.id ? { ...e, sets: [...newWarmups, ...e.sets] } : e
+                  ),
+                });
+              }}
+              onUpdateRestTimer={(seconds) => {
+                if (!active) return;
+                setActive({
+                  ...active,
+                  exercises: active.exercises.map((e: any) =>
+                    e.id === ex.id ? { ...e, rest_seconds: seconds } : e
+                  ),
+                });
+              }}
+              onReplaceExercise={() => {
+                // Open the exercise picker; on selection we'll swap by id
+                setReplaceTargetId(ex.id);
+                setShowExercisePicker(true);
+              }}
+              onCreateSuperset={() => {
+                if (!active) return;
+                const idx = active.exercises.findIndex((e: any) => e.id === ex.id);
+                if (idx < 0 || idx >= active.exercises.length - 1) {
+                  Alert.alert('Need a next exercise', 'Add another exercise after this one to create a superset.');
+                  return;
+                }
+                const nextId = active.exercises[idx + 1].id;
+                setActive({
+                  ...active,
+                  exercises: active.exercises.map((e: any) =>
+                    e.id === ex.id ? { ...e, superset_with: nextId } : e
+                  ),
+                });
+              }}
             />
           ))}
 
@@ -914,7 +1047,10 @@ export default function WorkoutScreen() {
         {/* Modals */}
         <ExercisePickerModal
           visible={showExercisePicker}
-          onClose={() => setShowExercisePicker(false)}
+          onClose={() => {
+            setShowExercisePicker(false);
+            setReplaceTargetId(null);
+          }}
           onSelect={addExercise}
           sessionToken={sessionToken}
         />
@@ -959,6 +1095,11 @@ function ExerciseCard({
   onRemove,
   onPlateCalc,
   onShowDetail,
+  onAddNote,
+  onAddWarmupSets,
+  onUpdateRestTimer,
+  onReplaceExercise,
+  onCreateSuperset,
 }: {
   exercise: ExerciseEntry;
   onAddSet: () => void;
@@ -968,10 +1109,16 @@ function ExerciseCard({
   onRemove: () => void;
   onPlateCalc: (weight: number) => void;
   onShowDetail: () => void;
+  onAddNote?: (note: string) => void;
+  onAddWarmupSets?: () => void;
+  onUpdateRestTimer?: (seconds: number) => void;
+  onReplaceExercise?: () => void;
+  onCreateSuperset?: () => void;
 }) {
   const [musclePri, setMusclePri] = useState<MuscleEntry[]>([]);
   const [muscleSec, setMuscleSec] = useState<MuscleEntry[]>([]);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Single-pulse animation when exercise is first added
   const pulseScale = useRef(new Animated.Value(1)).current;
@@ -1056,9 +1203,26 @@ function ExerciseCard({
           {exercise.muscle_group && (
             <Text style={styles.exMuscle}>{exercise.muscle_group}</Text>
           )}
+          {!!(exercise as any).note && (
+            <View style={styles.noteRow}>
+              <MaterialCommunityIcons name="note-text-outline" size={11} color={ACCENT} />
+              <Text style={styles.noteText} numberOfLines={2}>{(exercise as any).note}</Text>
+            </View>
+          )}
+          {!!(exercise as any).superset_with && (
+            <View style={styles.noteRow}>
+              <MaterialCommunityIcons name="link-variant" size={11} color={ACCENT} />
+              <Text style={styles.noteText}>Superset with next exercise</Text>
+            </View>
+          )}
         </TouchableOpacity>
-        <TouchableOpacity onPress={onRemove} style={styles.iconBtnSmall}>
-          <Ionicons name="trash-outline" size={18} color={TEXT_MUTED} />
+        <TouchableOpacity
+          onPress={() => setMenuOpen(true)}
+          style={styles.iconBtnSmall}
+          hitSlop={8}
+          testID={`exercise-options-${exercise.id}`}
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color={TEXT_MUTED} />
         </TouchableOpacity>
       </View>
 
@@ -1087,6 +1251,21 @@ function ExerciseCard({
         <Ionicons name="add" size={18} color={ACCENT} />
         <Text style={styles.addSetText}>Add Set</Text>
       </TouchableOpacity>
+
+      {/* Options menu (... in header) */}
+      <ExerciseOptionsMenu
+        visible={menuOpen}
+        exerciseName={exercise.exercise_name}
+        currentRestSeconds={(exercise as any).rest_seconds}
+        currentNote={(exercise as any).note}
+        onClose={() => setMenuOpen(false)}
+        onAddNote={onAddNote}
+        onAddWarmupSets={onAddWarmupSets}
+        onUpdateRestTimer={onUpdateRestTimer}
+        onReplaceExercise={onReplaceExercise}
+        onCreateSuperset={onCreateSuperset}
+        onRemoveExercise={onRemove}
+      />
     </View>
   );
 }
@@ -1349,12 +1528,46 @@ function TemplatePreviewModal({
   template,
   onClose,
   onStart,
+  onEdit,
+  lastPerformed,
 }: {
   template: Template | null;
   onClose: () => void;
   onStart: (t: Template) => void;
+  onEdit?: (t: Template) => void;
+  lastPerformed?: string | null;
 }) {
   const insets = useSafeAreaInsets();
+  const [exerciseImages, setExerciseImages] = useState<Record<string, string>>({});
+  const [detailExercise, setDetailExercise] = useState<string | null>(null);
+
+  // Pre-fetch GIF thumbs for the listed exercises (best-effort)
+  useEffect(() => {
+    if (!template) return;
+    let cancelled = false;
+    (async () => {
+      const newMap: Record<string, string> = {};
+      await Promise.all(
+        template.exercises.slice(0, 12).map(async (ex) => {
+          try {
+            const r = await authFetch(
+              `${BACKEND_URL}/api/exercises/details?name=${encodeURIComponent(ex.exercise_name)}`
+            );
+            if (r.ok) {
+              const j = await r.json();
+              const frames: string[] = j?.frames || [];
+              if (frames[0]) newMap[ex.exercise_name] = frames[0];
+            }
+          } catch {}
+        })
+      );
+      if (!cancelled) setExerciseImages((prev) => ({ ...prev, ...newMap }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [template]);
+
   if (!template) return null;
   const research = TEMPLATE_RESEARCH[template.template_id] || ['volume_schoenfeld_2017'];
   const totalSets = template.exercises.reduce((sum, e) => sum + (e.sets || 0), 0);
@@ -1364,9 +1577,21 @@ function TemplatePreviewModal({
       <View style={[styles.modalContainer, { paddingTop: insets.top || 16 }]}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{template.name}</Text>
-          <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
-            <Ionicons name="close" size={22} color="#fff" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {onEdit ? (
+              <TouchableOpacity
+                onPress={() => onEdit(template)}
+                style={[styles.iconBtn, { backgroundColor: '#222' }]}
+                hitSlop={10}
+              >
+                <Ionicons name="create-outline" size={18} color="#fff" />
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', marginLeft: 4 }}>Edit</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={onClose} style={styles.iconBtn} hitSlop={10}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
           {/* meta row */}
@@ -1384,6 +1609,12 @@ function TemplatePreviewModal({
               <Text style={styles.metaPillText}>~{estMin} min</Text>
             </View>
           </View>
+          {lastPerformed ? (
+            <View style={[styles.metaPill, { alignSelf: 'flex-start', marginTop: 8 }]}>
+              <Ionicons name="checkmark-done" size={12} color={ACCENT} />
+              <Text style={styles.metaPillText}>Last performed: {lastPerformed}</Text>
+            </View>
+          ) : null}
           <Text style={styles.tplMusclesLine}>Targets: {summarizeMuscles(template)}</Text>
           {!!template.description && (
             <Text style={styles.tplDesc}>{template.description}</Text>
@@ -1394,22 +1625,38 @@ function TemplatePreviewModal({
 
           {/* exercise list */}
           <Text style={[styles.section, { marginTop: 18, marginBottom: 8 }]}>Exercises</Text>
-          {template.exercises.map((ex, i) => (
-            <View key={`${ex.exercise_name}_${i}`} style={styles.previewExRow}>
-              <View style={styles.previewExNum}>
-                <Text style={styles.previewExNumText}>{i + 1}</Text>
+          {template.exercises.map((ex, i) => {
+            const thumb = exerciseImages[ex.exercise_name];
+            return (
+              <View key={`${ex.exercise_name}_${i}`} style={styles.previewExRow}>
+                {/* GIF thumbnail or numbered fallback */}
+                {thumb ? (
+                  <Image source={{ uri: thumb }} style={styles.previewExThumb} />
+                ) : (
+                  <View style={[styles.previewExThumb, { backgroundColor: '#1a1a1c', alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={styles.previewExNumText}>{i + 1}</Text>
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.previewExName}>{ex.exercise_name}</Text>
+                  <Text style={styles.previewExMeta}>
+                    {ex.sets} sets
+                    {ex.reps ? ` × ${ex.reps} reps` : ''}
+                    {ex.rest_seconds ? ` · ${formatRestShort(ex.rest_seconds)} rest` : ''}
+                  </Text>
+                  {!!ex.cue && <Text style={styles.previewExCue}>{ex.cue}</Text>}
+                </View>
+                {/* Help/details button */}
+                <TouchableOpacity
+                  onPress={() => setDetailExercise(ex.exercise_name)}
+                  style={styles.previewExHelp}
+                  hitSlop={8}
+                >
+                  <Ionicons name="help-circle" size={22} color="#5B8CFF" />
+                </TouchableOpacity>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.previewExName}>{ex.exercise_name}</Text>
-                <Text style={styles.previewExMeta}>
-                  {ex.sets} sets
-                  {ex.reps ? ` · ${ex.reps} reps` : ''}
-                  {ex.rest_seconds ? ` · ${formatRestShort(ex.rest_seconds)} rest` : ''}
-                </Text>
-                {!!ex.cue && <Text style={styles.previewExCue}>{ex.cue}</Text>}
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
         <View style={styles.tplPreviewFooter}>
           <TouchableOpacity
@@ -1421,6 +1668,12 @@ function TemplatePreviewModal({
             <Text style={styles.startBtnText}>Start Workout</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Exercise detail popup */}
+        <ExerciseQuickDetail
+          exerciseName={detailExercise}
+          onClose={() => setDetailExercise(null)}
+        />
       </View>
     </Modal>
   );
@@ -1717,6 +1970,26 @@ const styles = StyleSheet.create({
   exName: { color: '#fff', fontSize: 17, fontWeight: '800' },
   exNameRow: { flexDirection: 'row', alignItems: 'center' },
   exMuscle: { color: ACCENT, fontSize: 11, marginTop: 2, textTransform: 'capitalize' },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(245, 166, 35, 0.10)',
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  noteText: { color: ACCENT, fontSize: 11, fontWeight: '600', flexShrink: 1 },
+  warmupBadge: {
+    backgroundColor: '#FF8C42',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  warmupBadgeText: { color: '#000', fontSize: 9, fontWeight: '800' },
   muscleThumb: {
     width: 56,
     height: 56,
@@ -1929,7 +2202,19 @@ const styles = StyleSheet.create({
     marginRight: 10,
     marginTop: 2,
   },
-  previewExNumText: { color: '#000', fontSize: 12, fontWeight: '800' },
+  previewExNumText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  previewExThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#1a1a1c',
+    marginRight: 12,
+    overflow: 'hidden',
+  },
+  previewExHelp: {
+    paddingLeft: 8,
+    paddingTop: 2,
+  },
   previewExName: { color: '#fff', fontSize: 14, fontWeight: '700' },
   previewExMeta: { color: TEXT_MUTED, fontSize: 12, marginTop: 3 },
   previewExCue: { color: ACCENT, fontSize: 11, marginTop: 4, fontStyle: 'italic' },

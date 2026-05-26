@@ -2196,15 +2196,27 @@ PRESET_TEMPLATES = [
 
 @templates_router.get("")
 async def get_templates(user: User = Depends(get_current_user)):
-    """Get all workout templates (preset + user created)."""
+    """Get all workout templates (preset + user created + copied)."""
     user_templates = await db.workout_templates.find(
         {"user_id": user.user_id},
         {"_id": 0}
     ).to_list(50)
-    
+
+    # Split user templates into custom (created from scratch) and copied (from preset/coach)
+    custom = [t for t in user_templates if not t.get("is_copied")]
+    copied = [t for t in user_templates if t.get("is_copied")]
+
     return {
         "presets": PRESET_TEMPLATES,
-        "user_templates": user_templates
+        "user_templates": user_templates,  # legacy combined field — keep for back-compat
+        "custom_templates": custom,
+        "copied_templates": copied,
+        "limits": {
+            "max_custom": 3,
+            "max_copied": 3,
+            "custom_used": len(custom),
+            "copied_used": len(copied),
+        },
     }
 
 @templates_router.post("")
@@ -2212,16 +2224,44 @@ async def save_template(
     template_data: dict,
     user: User = Depends(get_current_user)
 ):
-    """Save a workout as a template."""
+    """Save a workout as a template.
+
+    Enforces limits:
+      - max 3 custom templates (created from scratch)
+      - max 3 copied templates (cloned from a preset or coach template, denoted
+        by `is_copied: true` or a `source_template_id` field)
+    """
+    is_copied = bool(template_data.get("is_copied") or template_data.get("source_template_id"))
+
+    # Count existing
+    existing = await db.workout_templates.find({"user_id": user.user_id}).to_list(50)
+    custom_used = sum(1 for t in existing if not t.get("is_copied"))
+    copied_used = sum(1 for t in existing if t.get("is_copied"))
+
+    if is_copied and copied_used >= 3:
+        raise HTTPException(
+            status_code=400,
+            detail="You have reached the maximum of 3 copied templates. Delete one to save a new one.",
+        )
+    if (not is_copied) and custom_used >= 3:
+        raise HTTPException(
+            status_code=400,
+            detail="You have reached the maximum of 3 custom templates. Delete one to save a new one.",
+        )
+
     template = WorkoutTemplate(
         user_id=user.user_id,
         name=template_data.get("name", "My Template"),
         exercises=template_data.get("exercises", []),
-        is_preset=False
+        is_preset=False,
     )
-    
-    await db.workout_templates.insert_one(template.dict())
-    return template.dict()
+    payload = template.dict()
+    payload["is_copied"] = is_copied
+    if template_data.get("source_template_id"):
+        payload["source_template_id"] = template_data["source_template_id"]
+
+    await db.workout_templates.insert_one(payload)
+    return payload
 
 @templates_router.delete("/{template_id}")
 async def delete_template(
