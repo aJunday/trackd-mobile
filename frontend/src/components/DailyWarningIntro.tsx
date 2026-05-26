@@ -1,8 +1,14 @@
 /**
- * DailyWarningIntro — shown once per day on first login.
- * Plays a ~2 second sequence: bencher → weights slide off → red flash →
- * warning sign → rotating inspirational quote → auto-dismiss / Skip.
+ * DailyWarningIntro — daily motivational intro shown once per day.
  *
+ * Sequence (~6s total):
+ *   0.0s  — Pure black, silhouette starts a smooth bicep curl loop
+ *   1.0s  — Skip button fades in (top right)
+ *   1.5s  — Quote card fades in (large bold white, gold underline, TRACKD logo)
+ *           Quote stays visible 4.0s
+ *   ~6.0s — Auto-dismiss
+ *
+ * Tap Skip at any time after 1s to dismiss immediately.
  * Storage key: `trackd.last_warning_date` — YYYY-MM-DD of last show.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,40 +22,37 @@ import {
   Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Rect, Circle, Line, Path } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Line, Ellipse } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 const ACCENT = '#F5A623';
-const BG = '#0D0D0F';
-const WARN = '#FF4D4F';
-const CARD = '#161618';
-const BORDER = '#222';
+const BG = '#000000';
 const TEXT_MUTED = '#888';
 
 const STORAGE_KEY = 'trackd.last_warning_date';
 
 const QUOTES: string[] = [
   "The only bad workout is the one that didn't happen.",
-  'Progress is progress no matter how small.',
+  "Strong is not a size. It's a decision.",
   "Your body can do it. It's your mind you need to convince.",
-  'Discipline weighs ounces, regret weighs tons.',
-  "Sweat is just fat crying. Make it cry today.",
-  "The pain you feel today is the strength you'll feel tomorrow.",
-  "Don't count the days, make the days count.",
-  'Strong is what you become when you have no other choice.',
-  'The hardest lift of all is lifting your butt off the couch.',
-  'Train insane or remain the same.',
-  'Push yourself because no one else is going to do it for you.',
-  'The body achieves what the mind believes.',
-  "Excuses don't burn calories.",
-  "You don't have to be extreme, just consistent.",
-  "If it doesn't challenge you, it doesn't change you.",
-  'Success is the sum of small efforts repeated day in and day out.',
-  "Every workout is a step closer to the person you want to become.",
-  "Tough times don't last. Tough people do.",
-  "The only person you should try to be better than is the one you were yesterday.",
-  "Your future self will thank you for the workout you did today.",
+  'Every rep counts. Every meal matters.',
+  'Progress is progress no matter how small.',
+  'The pain you feel today is the strength you feel tomorrow.',
+  "Don't stop when you're tired. Stop when you're done.",
+  'Discipline is choosing between what you want now and what you want most.',
+  "You don't have to be extreme. Just consistent.",
+  'Small daily improvements lead to stunning results.',
+  'The harder you work the better you feel.',
+  'Eat well. Train hard. Rest enough. Repeat.',
+  'Your future self is watching you right now.',
+  'Be stronger than your excuses.',
+  'One workout at a time. One meal at a time.',
+  "The gym is not a punishment. It's a privilege.",
+  'Sweat is just fat crying.',
+  'Results happen over time not overnight. Stay consistent.',
+  'The best investment you can make is in your own health.',
+  "Show up even when you don't feel like it. Especially then.",
 ];
 
 function today(): string {
@@ -61,31 +64,33 @@ function today(): string {
 }
 
 function pickDailyQuote(): string {
-  // Seed by day so the quote is stable through the day
+  // Seed by today's date so the quote stays stable through the day
   const d = today();
   let seed = 0;
   for (let i = 0; i < d.length; i++) seed = (seed * 31 + d.charCodeAt(i)) >>> 0;
   return QUOTES[seed % QUOTES.length];
 }
 
-const haptic = (type: 'light' | 'warning' = 'light') => {
+const subtleHaptic = () => {
   if (Platform.OS === 'web') return;
-  if (type === 'warning') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 };
 
+const AnimatedSvgLine = Animated.createAnimatedComponent(Line);
+const AnimatedG = Animated.createAnimatedComponent(View); // wrapper for transform
+
 export default function DailyWarningIntro({ onDone }: { onDone: () => void }) {
-  const [show, setShow] = useState<boolean | null>(null); // null = checking
+  const [show, setShow] = useState<boolean | null>(null);
   const quote = useMemo(() => pickDailyQuote(), []);
 
   // Animation values
-  const fade = useRef(new Animated.Value(0)).current;            // overall fade in
-  const plateOffset = useRef(new Animated.Value(0)).current;      // weights slide off
-  const redFlash = useRef(new Animated.Value(0)).current;         // red overlay
-  const warnScale = useRef(new Animated.Value(0)).current;        // warning sign pop
-  const quoteFade = useRef(new Animated.Value(0)).current;        // quote card fade
+  const fadeIn = useRef(new Animated.Value(0)).current;     // overall scene fade
+  const curl = useRef(new Animated.Value(0)).current;       // 0 = arm down, 1 = arm up
+  const quoteFade = useRef(new Animated.Value(0)).current;  // quote card fade
+  const skipFade = useRef(new Animated.Value(0)).current;   // skip button fade
+  const accentScale = useRef(new Animated.Value(0)).current; // gold underline grow
 
-  // Decide whether to show
+  // Check storage to decide
   useEffect(() => {
     (async () => {
       try {
@@ -100,48 +105,82 @@ export default function DailyWarningIntro({ onDone }: { onDone: () => void }) {
     })();
   }, [onDone]);
 
-  // Run animation once we've decided to show
+  // Run the choreography once we've decided to show
   useEffect(() => {
     if (!show) return;
-    Animated.timing(fade, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-    haptic('light');
-    // T=0.0s: scene visible, plates start sliding off at 0.35s
-    Animated.sequence([
-      Animated.delay(350),
-      Animated.timing(plateOffset, {
-        toValue: 1,
-        duration: 380,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      // T~0.75s: red flash
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(redFlash, { toValue: 1, duration: 130, useNativeDriver: true }),
-          Animated.timing(redFlash, { toValue: 0, duration: 260, useNativeDriver: true }),
-        ]),
-        Animated.timing(warnScale, {
+
+    // Scene fade in
+    Animated.timing(fadeIn, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    subtleHaptic();
+
+    // Curl loop — runs continuously while overlay is visible
+    const curlLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(curl, {
           toValue: 1,
-          duration: 280,
-          easing: Easing.out(Easing.back(2)),
+          duration: 900,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false, // we animate svg transforms via JS bridge
+        }),
+        Animated.timing(curl, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    curlLoop.start();
+
+    // Skip button fades in at 1.0s
+    const skipTimer = setTimeout(() => {
+      Animated.timing(skipFade, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+      }).start();
+    }, 1000);
+
+    // Quote fades in at 1.5s with gold underline growing right after
+    const quoteTimer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(quoteFade, {
+          toValue: 1,
+          duration: 480,
           useNativeDriver: true,
         }),
-      ]),
-      Animated.timing(quoteFade, { toValue: 1, duration: 280, useNativeDriver: true }),
-    ]).start(() => {
-      haptic('warning');
-    });
+        Animated.timing(accentScale, {
+          toValue: 1,
+          duration: 600,
+          delay: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, 1500);
 
-    // Auto-dismiss at 2000ms
-    const t = setTimeout(() => dismiss(), 2000);
-    return () => clearTimeout(t);
+    // Auto dismiss at 6.0s (1.5s anim + 4.0s quote + 0.5s outro)
+    const dismissTimer = setTimeout(() => {
+      dismiss();
+    }, 6000);
+
+    return () => {
+      clearTimeout(skipTimer);
+      clearTimeout(quoteTimer);
+      clearTimeout(dismissTimer);
+      curlLoop.stop();
+    };
   }, [show]);
 
   const dismiss = async () => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, today());
     } catch {}
-    Animated.timing(fade, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
+    Animated.timing(fadeIn, {
+      toValue: 0,
+      duration: 240,
+      useNativeDriver: true,
+    }).start(() => {
       setShow(false);
       onDone();
     });
@@ -149,106 +188,124 @@ export default function DailyWarningIntro({ onDone }: { onDone: () => void }) {
 
   if (!show) return null;
 
-  // Plates slide off to the right by 60px and rotate slightly
-  const plateTranslate = plateOffset.interpolate({
+  // Bicep curl forearm rotates around the elbow.
+  // Resting (0): forearm hangs ~85° below horizontal.
+  // Curled  (1): forearm angled ~25° above horizontal toward shoulder.
+  // Translated to interpolated coordinates of the wrist endpoint:
+  const wristX = curl.interpolate({ inputRange: [0, 1], outputRange: [148, 122] });
+  const wristY = curl.interpolate({ inputRange: [0, 1], outputRange: [148, 92] });
+  const dumbbellRot = curl.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 60],
+    outputRange: ['0deg', '-25deg'],
   });
-  const plateRotate = plateOffset.interpolate({
+  // Bicep "flex" — slight scale on upper arm
+  const bicepBulge = curl.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '14deg'],
-  });
-  const plateFall = plateOffset.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 26],
+    outputRange: [1, 1.18],
   });
 
   return (
-    <Animated.View style={[styles.root, { opacity: fade }]} pointerEvents="auto">
-      {/* Skip button always visible top-right */}
-      <TouchableOpacity style={styles.skipBtn} onPress={dismiss} hitSlop={12}>
-        <Text style={styles.skipText}>Skip</Text>
-        <Ionicons name="close" size={16} color="#fff" />
-      </TouchableOpacity>
+    <Animated.View style={[styles.root, { opacity: fadeIn }]} pointerEvents="auto">
+      {/* SKIP BUTTON (fades in at 1.0s) */}
+      <Animated.View style={[styles.skipWrap, { opacity: skipFade }]}>
+        <TouchableOpacity onPress={dismiss} hitSlop={14} style={styles.skipBtn}>
+          <Text style={styles.skipText}>Skip</Text>
+        </TouchableOpacity>
+      </Animated.View>
 
-      {/* Animated illustration */}
+      {/* SILHOUETTE — bicep curl loop */}
       <View style={styles.illustration}>
-        <Svg width={260} height={170} viewBox="0 0 260 170">
-          {/* Bench */}
-          <Rect x={60} y={120} width={140} height={10} rx={3} fill="#3a3a3d" />
-          <Rect x={68} y={130} width={6} height={26} fill="#3a3a3d" />
-          <Rect x={186} y={130} width={6} height={26} fill="#3a3a3d" />
-          {/* Body lying on bench */}
-          <Rect x={80} y={108} width={100} height={14} rx={6} fill="#888" />
-          <Circle cx={80} cy={115} r={10} fill="#aaa" />
-          {/* Arms reaching up */}
-          <Line x1={120} y1={108} x2={120} y2={75} stroke="#888" strokeWidth={6} strokeLinecap="round" />
-          <Line x1={150} y1={108} x2={150} y2={75} stroke="#888" strokeWidth={6} strokeLinecap="round" />
-          {/* Barbell shaft */}
-          <Rect x={70} y={70} width={130} height={6} rx={2} fill="#d4d4d4" />
-          {/* Sleeves (no clips) */}
-          <Rect x={62} y={67} width={10} height={12} fill="#888" />
-          <Rect x={198} y={67} width={10} height={12} fill="#888" />
+        <Svg width={220} height={240} viewBox="0 0 220 240">
+          {/* Soft floor shadow */}
+          <Ellipse cx={110} cy={222} rx={50} ry={5} fill="#1a1a1a" opacity={0.7} />
+
+          {/* Head */}
+          <Circle cx={110} cy={42} r={18} fill="#2A2A2A" stroke={ACCENT} strokeWidth={1.5} />
+
+          {/* Neck */}
+          <Rect x={106} y={58} width={8} height={10} rx={3} fill="#2A2A2A" />
+
+          {/* Torso — strong V-taper */}
+          <Path
+            d="M82 70 L138 70 L132 150 L88 150 Z"
+            fill="#1F1F1F"
+            stroke={ACCENT}
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
+
+          {/* Resting (left) arm — static, hangs straight */}
+          {/* Upper arm */}
+          <Rect x={80} y={78} width={9} height={42} rx={4} fill="#2A2A2A" stroke={ACCENT} strokeWidth={1} />
+          {/* Forearm */}
+          <Rect x={80} y={120} width={9} height={36} rx={4} fill="#2A2A2A" stroke={ACCENT} strokeWidth={1} />
+          {/* Resting dumbbell */}
+          <Rect x={72} y={156} width={25} height={6} rx={2} fill={ACCENT} />
+          <Rect x={68} y={152} width={8} height={14} rx={2} fill="#fff" />
+          <Rect x={93} y={152} width={8} height={14} rx={2} fill="#fff" />
+
+          {/* Legs */}
+          <Rect x={91} y={150} width={12} height={62} rx={4} fill="#1F1F1F" stroke={ACCENT} strokeWidth={1} />
+          <Rect x={117} y={150} width={12} height={62} rx={4} fill="#1F1F1F" stroke={ACCENT} strokeWidth={1} />
+          {/* Feet */}
+          <Rect x={86} y={210} width={20} height={6} rx={2} fill="#2A2A2A" />
+          <Rect x={114} y={210} width={20} height={6} rx={2} fill="#2A2A2A" />
+
+          {/* ACTIVE (right) arm — animated bicep curl */}
+          {/* Upper arm anchored at shoulder (135,78) — animated bulge */}
+          <AnimatedSvgLine
+            x1={135}
+            y1={78}
+            x2={148}
+            y2={120}
+            stroke={ACCENT}
+            strokeWidth={Animated.multiply(bicepBulge, 9) as any}
+            strokeLinecap="round"
+          />
+          {/* Forearm — animated to curl up to wristX/wristY */}
+          <AnimatedSvgLine
+            x1={148}
+            y1={120}
+            x2={wristX as any}
+            y2={wristY as any}
+            stroke="#fff"
+            strokeWidth={8}
+            strokeLinecap="round"
+          />
         </Svg>
 
-        {/* Left plates — stay put */}
-        <View style={[styles.platesAbs, { left: 30 }]}>
-          <View style={[styles.plate, { backgroundColor: '#FF4D4F', height: 56, width: 16 }]} />
-          <View style={[styles.plate, { backgroundColor: '#5a5a5a', height: 44, width: 14, marginLeft: 4 }]} />
-        </View>
-
-        {/* Right plates — slide off & rotate */}
+        {/* Active hand dumbbell — overlay because Animated rotate inside SVG is awkward */}
         <Animated.View
           style={[
-            styles.platesAbs,
+            styles.activeDbWrap,
             {
-              right: 30,
-              flexDirection: 'row-reverse',
               transform: [
-                { translateX: plateTranslate },
-                { translateY: plateFall },
-                { rotate: plateRotate },
+                { translateX: Animated.subtract(wristX as any, new Animated.Value(20)) },
+                { translateY: Animated.subtract(wristY as any, new Animated.Value(8)) },
+                { rotate: dumbbellRot },
               ],
             },
           ]}
         >
-          <View style={[styles.plate, { backgroundColor: '#FF4D4F', height: 56, width: 16 }]} />
-          <View style={[styles.plate, { backgroundColor: '#5a5a5a', height: 44, width: 14, marginRight: 4 }]} />
-        </Animated.View>
-
-        {/* Warning sign — pops in after slide */}
-        <Animated.View
-          style={[
-            styles.warnIconWrap,
-            { transform: [{ scale: warnScale }] },
-          ]}
-        >
-          <Svg width={56} height={50} viewBox="0 0 56 50">
-            <Path d="M28 4 L52 46 L4 46 Z" fill={WARN} stroke="#000" strokeWidth={2} strokeLinejoin="round" />
-            <Rect x={26} y={18} width={4} height={16} rx={1} fill="#fff" />
-            <Circle cx={28} cy={40} r={2.5} fill="#fff" />
-          </Svg>
+          <View style={styles.dbBar} />
+          <View style={[styles.dbPlate, { left: -4 }]} />
+          <View style={[styles.dbPlate, { right: -4 }]} />
         </Animated.View>
       </View>
 
-      {/* Tagline under illustration */}
-      <Text style={styles.taglineHead}>Always use clips.</Text>
-      <Text style={styles.taglineSub}>Train safe — your future self thanks you.</Text>
-
-      {/* Quote card */}
-      <Animated.View style={[styles.quoteCard, { opacity: quoteFade }]}>
-        <Ionicons name="flash" size={16} color={ACCENT} style={{ marginBottom: 6 }} />
+      {/* QUOTE CARD — fades in at 1.5s */}
+      <Animated.View style={[styles.quoteWrap, { opacity: quoteFade }]}>
         <Text style={styles.quoteText}>"{quote}"</Text>
+        {/* Gold underline that grows in */}
+        <Animated.View
+          style={[
+            styles.accentBar,
+            { transform: [{ scaleX: accentScale }] },
+          ]}
+        />
+        {/* TRACKD logo */}
+        <Text style={styles.logo}>TRACKD</Text>
       </Animated.View>
-
-      {/* Red flash overlay */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.flash,
-          { opacity: redFlash },
-        ]}
-      />
     </Animated.View>
   );
 }
@@ -260,91 +317,91 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: BG,
+    backgroundColor: BG, // pure black
     zIndex: 9999,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 28,
   },
-  skipBtn: {
+  skipWrap: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 56 : 30,
+    top: Platform.OS === 'ios' ? 56 : 32,
     right: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: BORDER,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
     zIndex: 10,
   },
-  skipText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  skipBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  skipText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.5,
+    opacity: 0.85,
+  },
 
   illustration: {
-    width: 260,
-    height: 200,
+    width: 220,
+    height: 240,
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-  },
-  platesAbs: {
-    position: 'absolute',
-    top: 47,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  plate: {
-    borderRadius: 3,
-  },
-  warnIconWrap: {
-    position: 'absolute',
-    top: 16,
-    right: 6,
+    marginBottom: 12,
   },
 
-  taglineHead: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '800',
-    marginTop: 6,
-    letterSpacing: 0.3,
-  },
-  taglineSub: {
-    color: TEXT_MUTED,
-    fontSize: 13,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-
-  quoteCard: {
-    marginTop: 26,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: BORDER,
-    paddingHorizontal: 22,
-    paddingVertical: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-    maxWidth: 320,
-  },
-  quoteText: {
-    color: '#fff',
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '600',
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-
-  flash: {
+  activeDbWrap: {
     position: 'absolute',
     top: 0,
     left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: WARN,
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 40,
+    height: 16,
+  },
+  dbBar: {
+    position: 'absolute',
+    left: 6,
+    top: 6,
+    width: 28,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: ACCENT,
+  },
+  dbPlate: {
+    position: 'absolute',
+    top: 0,
+    width: 8,
+    height: 16,
+    borderRadius: 2,
+    backgroundColor: '#fff',
+  },
+
+  quoteWrap: {
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    maxWidth: 360,
+    marginTop: 8,
+  },
+  quoteText: {
+    color: '#fff',
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  accentBar: {
+    width: 88,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: ACCENT,
+    marginTop: 18,
+  },
+  logo: {
+    color: ACCENT,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 5,
+    marginTop: 14,
   },
 });
