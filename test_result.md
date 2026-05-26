@@ -767,7 +767,7 @@ agent_communication:
 backend:
   - task: "AI Chef Pantry Deduction — POST /api/pantry/cook-meal (dry_run + apply)"
     implemented: true
-    working: false
+    working: true
     file: "backend/server.py"
     stuck_count: 1
     priority: "high"
@@ -782,7 +782,7 @@ backend:
 
   - task: "Calorie Goal Auto-Adjustment — GET /api/coach/calorie-adjustment + POST /api/coach/apply-calorie-adjustment"
     implemented: true
-    working: false
+    working: true
     file: "backend/server.py"
     stuck_count: 1
     priority: "high"
