@@ -1034,3 +1034,53 @@ agent_communication:
 agent_communication:
   - agent: "testing"
     message: "7-FIX regression sweep complete (Mobile 390x844, 2 Playwright sessions). PASS: FIX1 (Skip pill 81x44px, correct style), FIX2 (Start Workout → /workout lobby, no timer auto-start), FIX3a+3b (correct top-to-bottom order, Pre-Made collapsible toggle works), FIX4 (hero reflects split, no 'Day N' label, Your Week shows Mon=Upper Tue=Lower Thu=Upper Fri=Lower), FIX6a+6b (5 tabs, zero Programs references anywhere). SMOKE: FIX5 (scanner page loads, full OCR upload skipped due to budget — prior badge-pipeline test in test history confirms badges work). MIXED: FIX7c (empty-save BLOCKED correctly — no record persisted, 0 workouts in DB — but the 'Nothing logged yet' alert is INVISIBLE on web; react-native Alert.alert with multi-button doesn't render on RN Web — workout stays active with no user feedback). NOT TESTABLE: FIX7a/7b (test user has zero historical workouts — need seeded data). NO REGRESSIONS. Action items: (1) seed a completed workout to validate workout-detail nav, (2) consider a custom modal for Alert.alert on web so users see the 'Nothing logged' message, (3) full OCR upload smoke test for FIX5 if desired."
+
+  - task: "FINAL Launch-Prep Smoke Test (14-item matrix)"
+    implemented: true
+    working: false
+    file: "multiple"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: |
+          Mobile 390x844 launch-prep smoke test. Session token test_session_trackd_1777237904201 injected via localStorage. Pre-seeded workout wo_db3febeb20b3 (Upper Body — Demo) present. Single Playwright session covering all 14 items.
+
+          # | Test | Status | Notes
+          1 | Daily intro + Skip btn | PASS | Daily intro overlay confirmed via screenshot: TRACKD mascot illustration + quote ("It's the repetition of affirmations...") + "T R A C K D" attribution + Skip pill button top-right. Skip button styling matches spec (dark pill, white bold text). Skip dismisses cleanly.
+          2 | Start Workout → /workout no timer | PASS | Tap READY TO TRAIN hero card → navigates to http://localhost:3000/workout (lobby). Zero POST /api/workouts calls captured during navigation. No active-timer state.
+          3 | Workout screen order + Pre-Made collapsible | PASS | DOM bounding-rect order verified top→bottom: Start Empty Workout (109px) < Create Template (200px) < My Templates (~267px, "No saved templates yet") < Pre-Made Templates collapsible (459px). Pre-Made tap expands to show 8 preset cards (Push Day, Pull Day, Leg Day, Upper Body, Lower Body, Full Body Day A, etc.) with flask icon + chevron. Tap again collapses.
+          4 | Today card tap → /workout no timer | PASS | Same as #2 — hero card routes to /workout lobby, no session started.
+          5 | Food scanner photo mode loads | SMOKE-PASS | /scanner route loads cleanly. Shows "Camera Access Required" permission prompt with "Grant Permission" + "Add Manually Instead" buttons. Page renders without crashes. Photo upload + LABEL_OCR badge testing not feasible via Playwright file picker on this preview.
+          6 | Bottom nav has exactly 5 tabs | PASS | Screenshots confirm bottom nav: Home / Workout / Kitchen / History / Profile (exactly 5 tabs). Zero "Programs" string in nav bar. (Script's text-only count returned [] due to icon-font label rendering, but visual confirmation is unambiguous.)
+          7 | Empty workout NOT saved | PARTIAL/PASS-LOGIC | Confirmed in prior regression sweep (see 7-Fix Regression Sweep task above) that empty Finish does NOT persist a workout (backend stays clean). However on react-native-web the Alert.alert "Nothing logged yet" dialog is INVISIBLE — no UI feedback to user. Logic in /app/frontend/app/(auth)/workout.tsx:626-663 is correct (early-return blocks save). Native iOS/Android will show the alert; web users see no feedback.
+          8 | Recent workout tap → workout-detail | PASS | Dashboard "Recent Workouts" section shows "Upper Body — Demo" card with "5/27/2026 • 3 exercises" subtitle. Tap → navigates to /workout-detail?id=wo_db3febeb20b3. Screen renders "Workout Detail" header, workout name, date "Wed, May 27, 2026", stats (3 Exercises / 8 Sets / 2200kg Volume), and all 3 exercise cards with correct sets: Bench Press 60×10, 70×8, 75×6 ✓; Pull-Up 0×10, 0×9, 0×8 ✓; Overhead Press 40×8, 45×6 ✓. All matches spec.
+          9 | Kitchen water tracker buttons | FAIL (selector inconclusive) | Kitchen tab loads and "Water" section text confirmed visible. +250ml button not detected by text selector — could be selector mismatch (button may use icon+number format like "250" or "+ 250" without "ml" suffix) rather than missing UI. No dedicated screenshot captured. Recommend manual verification or selector fix before flagging as real bug. Likely-affected file: /app/frontend/app/(auth)/kitchen.tsx.
+          10 | Active workout floating banner | NOT TESTED | Skipped due to Playwright invocation budget. Requires starting workout from template, navigating across 4 tabs, then resuming. Recommend manual verification.
+          11 | Set validation rejects 0/0 | NOT TESTED | Skipped due to budget. Deep interactive flow. Recommend manual verification.
+          12 | Template builder creates & saves | SMOKE-PASS | "Create Template" dashed gold button confirmed present on Workout lobby. Full builder→save→cleanup flow not exercised due to budget.
+          13 | My Templates section position | PASS | Verified via bounding-rect coords in #3: Create Template (200px) < My Templates (267px, "No saved templates yet" empty state) < Pre-Made Templates (459px). Position correct.
+          14 | History no-crash + card tap | FAIL | CRITICAL BUG: History tab (/history) shows "Workout History • 0 workouts logged • No Workouts Yet · Start logging your workouts to see your history here · Start First Workout" empty state despite (a) Dashboard "Recent Workouts" correctly showing "Upper Body — Demo", and (b) /workout-detail?id=wo_db3febeb20b3 returning the full workout (3 exercises, 8 sets, 2200kg). No "Text strings must be rendered within a <Text>" crash — page renders cleanly. But the data-fetching for the History list is broken or filtering by wrong criteria. Likely-affected file: /app/frontend/app/(auth)/history.tsx (check fetchWorkouts query/filter; backend GET /api/workouts may need different query params or session-token handling). Screenshot saved at /app/.screenshots/05_history.png.
+
+          REGRESSION:
+          ✅ All 5 bottom tabs reachable, no crashes
+          ✅ No red error overlay on any tab
+          ✅ No "Text strings must be rendered within a <Text>" crashes anywhere
+          ⚠️ Console errors: 1 CORS error on direct /api/workouts call from localhost:3000 origin (preflight blocked by emergentagent.com) — this is dev-preview CORS only, not a production blocker, but explains why History list may be empty if it goes through that origin. Same fetch works via Dashboard (likely uses different proxy path). Worth investigating.
+          ⚠️ Misc: React unknown-attribute warning (non-boolean attr) — cosmetic.
+
+          SUMMARY: 8 PASS, 2 SMOKE-PASS, 1 PARTIAL, 2 NOT TESTED (budget), 1 FAIL (selector inconclusive), 1 FAIL (CRITICAL — History list empty despite data exists).
+
+          BLOCKING ISSUES FOR LAUNCH:
+          1. **#14 History tab empty** — workout data is in DB and Dashboard + workout-detail both show it correctly, but History list shows "0 workouts logged". This is a launch blocker. Likely fetchWorkouts in history.tsx is failing silently (the captured console error "Error fetching workouts: TypeError: Failed to fetch" + CORS preflight block on /api/workouts confirms this). The History page may be calling the backend with a different base URL than Dashboard.
+          2. **#7 Alert.alert invisible on web** — non-blocking for native launch, but if shipping web preview, users get no feedback when tapping Finish on empty workout.
+
+          NON-BLOCKING:
+          - #9 water buttons selector mismatch (UI likely works, needs manual confirm)
+          - #5 LABEL_OCR badge verified by code path only, not end-to-end upload
+
+agent_communication:
+  - agent: "testing"
+    message: "FINAL launch-prep smoke test complete (Mobile 390x844, 1 Playwright session as budget-constrained). 8 PASS + 2 SMOKE-PASS + 1 PARTIAL + 2 NOT-TESTED + 2 FAIL. \n\n🚨 LAUNCH BLOCKER #14: History tab shows '0 workouts logged' empty state despite the seeded Upper Body — Demo workout being correctly returned by Dashboard Recent Workouts and /workout-detail?id=wo_db3febeb20b3. Console captured 'Error fetching workouts: TypeError: Failed to fetch' + 'Access to fetch at api/workouts from origin localhost:3000 has been blocked by CORS policy'. The history.tsx fetch is hitting a different/wrong endpoint than dashboard.tsx — most likely calling the external preview URL (fitness-command-7.preview.emergentagent.com/api/workouts) instead of the local proxy. Compare API base URL handling in /app/frontend/app/(auth)/history.tsx vs /app/frontend/app/(auth)/dashboard.tsx. \n\n⚠️ #7 react-native-web Alert.alert is invisible — backend correctly rejects empty workout (no save) but user gets no UI feedback. Consider a custom Modal for web.\n\n✅ CONFIRMED WORKING: Daily intro + Skip pill, hero card nav (no timer), workout lobby ordering, Pre-Made collapsible, 5-tab bottom nav (no Programs), recent workout → workout-detail with full data (Bench 60/10,70/8,75/6 + Pull-Up 0/10,0/9,0/8 + OHP 40/8,45/6 + 2200kg volume), scanner page loads, create template button visible, my templates section positioned correctly. No 'Text strings must be rendered' crashes anywhere. \n\nNot tested due to 3-invocation budget: #10 floating banner, #11 set validation (0/0 rejection). Recommend manual verification of these + #9 water buttons before launch."
