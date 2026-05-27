@@ -68,17 +68,17 @@ export default function HistoryScreen() {
   };
 
   const getTotalSets = (workout: Workout) => {
-    return workout.exercises.reduce((acc, ex) => {
-      return acc + ex.sets.filter(s => s.completed).length;
+    return (workout.exercises || []).reduce((acc, ex) => {
+      return acc + ((ex?.sets || []).filter((s) => s?.completed).length);
     }, 0);
   };
 
   const getTotalVolume = (workout: Workout) => {
     let volume = 0;
-    workout.exercises.forEach(ex => {
-      ex.sets.forEach(set => {
-        if (set.completed) {
-          volume += set.weight * set.reps;
+    (workout.exercises || []).forEach((ex) => {
+      (ex?.sets || []).forEach((set) => {
+        if (set?.completed) {
+          volume += (Number(set.weight) || 0) * (Number(set.reps) || 0);
         }
       });
     });
@@ -166,7 +166,7 @@ export default function HistoryScreen() {
                     <View style={styles.detailItem}>
                       <Ionicons name="barbell-outline" size={16} color="#666666" />
                       <Text style={styles.detailText}>
-                        {workout.exercises.length} exercises
+                        {(workout.exercises || []).length} exercises
                       </Text>
                     </View>
                     <View style={styles.detailItem}>
@@ -193,16 +193,16 @@ export default function HistoryScreen() {
 
                   {/* Exercise preview */}
                   <View style={styles.exercisePreview}>
-                    {workout.exercises.slice(0, 3).map((ex, idx) => (
+                    {(workout.exercises || []).slice(0, 3).map((ex, idx) => (
                       <Text key={idx} style={styles.exercisePreviewText}>
-                        {ex.exercise_name}
+                        {ex?.exercise_name || ''}
                       </Text>
                     ))}
-                    {workout.exercises.length > 3 && (
+                    {(workout.exercises || []).length > 3 ? (
                       <Text style={styles.moreExercises}>
-                        +{workout.exercises.length - 3} more
+                        +{(workout.exercises || []).length - 3} more
                       </Text>
-                    )}
+                    ) : null}
                   </View>
                 </TouchableOpacity>
               ))}

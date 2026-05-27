@@ -982,38 +982,41 @@ export default function WorkoutScreen() {
           </View>
           {(() => {
             const customs = templates.custom_templates ?? templates.user_templates.filter((t: any) => !t.is_copied);
-            return customs.length === 0 ? (
-              <Text style={styles.emptyTextFlat}>
-                No saved templates yet — tap Create Template above to build your own.
-              </Text>
-            ) : (
-              <View style={styles.templateGrid}>
-                {customs.map((t: Template) => (
-                  <TouchableOpacity
-                    key={t.template_id}
-                    style={styles.templateCard}
-                    activeOpacity={0.85}
-                    onPress={() => setPreviewTemplate(t)}
-                  >
-                    <View style={styles.tplIconWrap}>
-                      <Ionicons name="bookmark" size={20} color={ACCENT} />
-                    </View>
-                    <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
-                    <Text style={styles.tplCardMeta}>{t.exercises.length} ex</Text>
-                    <TouchableOpacity
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        openTemplateMenu(t);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{ position: 'absolute', top: 8, right: 8, padding: 4 }}
-                    >
-                      <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            );
+            if (customs.length === 0) {
+              return (
+                <Text style={styles.emptyTextFlat}>
+                  No saved templates yet — tap Create Template above to build your own.
+                </Text>
+              );
+            }
+            // FIX — No outer wrapper. Each card sits directly on the screen
+            // background, stacked vertically with its own card styling.
+            return customs.map((t: Template) => (
+              <TouchableOpacity
+                key={t.template_id}
+                style={styles.myTemplateCardFlat}
+                activeOpacity={0.85}
+                onPress={() => setPreviewTemplate(t)}
+              >
+                <View style={styles.tplIconWrap}>
+                  <Ionicons name="bookmark" size={20} color={ACCENT} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
+                  <Text style={styles.tplCardMeta}>{(t.exercises || []).length} ex</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    openTemplateMenu(t);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ padding: 6 }}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            ));
           })()}
 
           {/* Pre-Made Templates — collapsible button (FIX 3) */}
@@ -2359,6 +2362,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 2,
     lineHeight: 18,
+  },
+  // FIX — My Templates cards: flat full-width, no outer wrapper
+  myTemplateCardFlat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: CARD,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   emptySub: { color: TEXT_MUTED, fontSize: 13, marginTop: 4, textAlign: 'center' },
   recentCard: {
