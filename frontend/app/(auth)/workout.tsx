@@ -653,7 +653,7 @@ export default function WorkoutScreen() {
       // Native: Alert.alert renders the 2-button modal. Web: window.confirm fallback.
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const ok = window.confirm(`${title}\n\n${msg}\n\nPress OK to discard the session, or Cancel to keep going.`);
-        if (ok) await onDiscard();
+        if (ok) onDiscard();
         return;
       }
       Alert.alert(title, msg, [
