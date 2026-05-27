@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../_layout';
+import { authFetch } from '../../src/utils/authFetch';
 
 const ACCENT_COLOR = '#F5A623';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -35,18 +36,8 @@ export default function HistoryScreen() {
 
   const fetchWorkouts = async () => {
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (sessionToken) {
-        headers['Authorization'] = `Bearer ${sessionToken}`;
-      }
-
-      const response = await fetch(`${BACKEND_URL}/api/workouts`, {
-        headers,
-        credentials: 'include',
-      });
-
+      // Use authFetch wrapper (handles base URL + auth correctly, avoids CORS issues)
+      const response = await authFetch(`${BACKEND_URL}/api/workouts`);
       if (response.ok) {
         const data = await response.json();
         setWorkouts(data);
