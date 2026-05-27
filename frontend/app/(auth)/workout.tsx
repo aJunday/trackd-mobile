@@ -631,34 +631,35 @@ export default function WorkoutScreen() {
       (ex.sets || []).some((s) => s.completed && (s.reps || 0) > 0)
     );
     if (!hasAnyExercise || !hasAnyCompletedSet) {
-      Alert.alert(
-        'Nothing logged yet',
-        hasAnyExercise
-          ? 'Complete at least one set with weight & reps before saving this workout.'
-          : 'Add at least one exercise and complete a set before finishing.',
-        [
-          { text: 'Keep Going', style: 'cancel' },
-          {
-            text: 'Discard',
-            style: 'destructive',
-            onPress: async () => {
-              haptic();
-              if (active.workout_id) {
-                try {
-                  await authFetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
-                    method: 'DELETE',
-                    headers: apiHeaders(),
-                  });
-                } catch { /* ignore */ }
-              }
-              setActive(null);
-              setRestTimer({ active: false, secs: 0, total: 0 });
-              setProgramContext(null);
-              router.replace('/(auth)/workout' as any);
-            },
-          },
-        ]
-      );
+      const title = 'Nothing logged yet';
+      const msg = hasAnyExercise
+        ? 'Complete at least one set with weight & reps before saving this workout.'
+        : 'Add at least one exercise and complete a set before finishing.';
+      const onDiscard = async () => {
+        haptic();
+        if (active.workout_id) {
+          try {
+            await authFetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
+              method: 'DELETE',
+              headers: apiHeaders(),
+            });
+          } catch { /* ignore */ }
+        }
+        setActive(null);
+        setRestTimer({ active: false, secs: 0, total: 0 });
+        setProgramContext(null);
+        router.replace('/(auth)/workout' as any);
+      };
+      // Native: Alert.alert renders the 2-button modal. Web: window.confirm fallback.
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const ok = window.confirm(`${title}\n\n${msg}\n\nPress OK to discard the session, or Cancel to keep going.`);
+        if (ok) await onDiscard();
+        return;
+      }
+      Alert.alert(title, msg, [
+        { text: 'Keep Going', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: onDiscard },
+      ]);
       return;
     }
     Alert.alert('Finish Workout?', 'This will save your session and clear the timer.', [
