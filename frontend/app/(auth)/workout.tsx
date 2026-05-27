@@ -983,11 +983,9 @@ export default function WorkoutScreen() {
           {(() => {
             const customs = templates.custom_templates ?? templates.user_templates.filter((t: any) => !t.is_copied);
             return customs.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <MaterialCommunityIcons name="bookmark-outline" size={28} color={TEXT_MUTED} />
-                <Text style={styles.emptyText}>No saved templates yet</Text>
-                <Text style={styles.emptySub}>Tap Create Template above to build your own.</Text>
-              </View>
+              <Text style={styles.emptyTextFlat}>
+                No saved templates yet — tap Create Template above to build your own.
+              </Text>
             ) : (
               <View style={styles.templateGrid}>
                 {customs.map((t: Template) => (
@@ -2354,6 +2352,14 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   emptyText: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 8 },
+  emptyTextFlat: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    lineHeight: 18,
+  },
   emptySub: { color: TEXT_MUTED, fontSize: 13, marginTop: 4, textAlign: 'center' },
   recentCard: {
     flexDirection: 'row',
