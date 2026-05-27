@@ -90,15 +90,8 @@ export default function AuthLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="programs"
-        options={{
-          title: 'Programs',
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon set="ion" name={focused ? 'trophy' : 'trophy-outline'} color={color} size={size} focused={focused} />
-          ),
-        }}
-      />
+      {/* FIX 6 — Programs tab removed from bottom nav. Route preserved as hidden so direct deep-links don't 404. */}
+      <Tabs.Screen name="programs" options={{ href: null }} />
       <Tabs.Screen
         name="kitchen"
         options={{
@@ -135,6 +128,7 @@ export default function AuthLayout() {
       <Tabs.Screen name="ai-chef" options={{ href: null }} />
       <Tabs.Screen name="meal-scanner" options={{ href: null }} />
       <Tabs.Screen name="exercise-detail" options={{ href: null }} />
+      <Tabs.Screen name="workout-detail" options={{ href: null }} />
       <Tabs.Screen name="indian-foods" options={{ href: null }} />
       <Tabs.Screen name="shopping-list" options={{ href: null }} />
       <Tabs.Screen name="template-builder" options={{ href: null }} />

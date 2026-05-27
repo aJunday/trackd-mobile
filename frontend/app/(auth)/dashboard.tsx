@@ -157,11 +157,20 @@ export default function Dashboard() {
 
   const startWorkout = () => {
     haptic();
-    // If user has a split + today's plan is a real workout, pre-fill that template
-    if (todayPlan && !todayPlan.is_rest && todayPlan.template_id !== 'rest') {
-      router.push(`/(auth)/workout?autoStart=1&splitTemplate=${todayPlan.template_id}` as any);
+    // FIX 2 — Do NOT auto-start a workout/timer from the dashboard hero.
+    // Just navigate to the Workout tab so the user can pick what they want.
+    // FIX 4 — If today's plan resolves to a user template (via training_day_templates map),
+    // pre-select that template for preview but still do not start the timer.
+    const todayIdx = todayDow();
+    const dayTemplate = (user as any)?.training_day_templates?.[String(todayIdx)] as
+      | string
+      | undefined;
+    if (dayTemplate) {
+      router.push(`/(auth)/workout?previewTemplate=${dayTemplate}` as any);
+    } else if (todayPlan && !todayPlan.is_rest && todayPlan.template_id !== 'rest') {
+      router.push(`/(auth)/workout?previewTemplate=${todayPlan.template_id}` as any);
     } else {
-      router.push('/(auth)/workout?autoStart=1' as any);
+      router.push('/(auth)/workout' as any);
     }
   };
 
@@ -207,17 +216,23 @@ export default function Dashboard() {
           <View style={styles.heroContent}>
             <View style={{ flex: 1 }}>
               <Text style={styles.heroLabel}>READY TO TRAIN</Text>
-              <Text style={styles.heroTitle}>{todayPlan && !todayPlan.is_rest ? todayPlan.template_name : 'Start Workout'}</Text>
+              <Text style={styles.heroTitle}>{(() => {
+                const customTplId = (user as any)?.training_day_templates?.[String(todayDow())];
+                if (customTplId) {
+                  const t: any = (user as any)?._customTemplatesLookup?.[customTplId];
+                  if (t?.name) return t.name;
+                }
+                if (todayPlan && !todayPlan.is_rest) return todayPlan.template_name;
+                return 'Start Workout';
+              })()}</Text>
               <Text style={styles.heroSub}>
-                {activeProgram?.active
-                  ? `${activeProgram.active.sport_name} · W${activeProgram.current_week} D${activeProgram.current_day}`
-                  : todayPlan
-                    ? (todayPlan.is_rest ? 'Rest day · go for a walk' : `Today's plan from your split`)
-                    : 'Empty session or pick a template'}
+                {todayPlan
+                  ? (todayPlan.is_rest ? 'Rest day · go for a walk' : 'Tap to open in Workout tab')
+                  : 'Choose a template or empty session'}
               </Text>
             </View>
             <View style={styles.heroIconWrap}>
-              <Ionicons name={todayPlan?.is_rest ? 'bed' : 'play'} size={36} color="#000" />
+              <Ionicons name={todayPlan?.is_rest ? 'bed' : 'arrow-forward'} size={32} color="#000" />
             </View>
           </View>
         </TouchableOpacity>
@@ -289,7 +304,7 @@ export default function Dashboard() {
           />
         </View>
 
-        {/* Quick Actions row */}
+        {/* Quick Actions row — FIX 6: Programs tile removed */}
         <Text style={styles.section}>Quick</Text>
         <View style={styles.quickRow}>
           <QuickTile
@@ -299,16 +314,16 @@ export default function Dashboard() {
             onPress={() => router.push('/(auth)/meal-scanner')}
           />
           <QuickTile
-            icon="trophy"
-            label="Programs"
-            sub="18 sports"
-            onPress={() => router.push('/(auth)/programs')}
-          />
-          <QuickTile
             icon="restaurant"
             label="Kitchen"
             sub="Macros"
             onPress={() => router.push('/(auth)/kitchen')}
+          />
+          <QuickTile
+            icon="time"
+            label="History"
+            sub="Past sessions"
+            onPress={() => router.push('/(auth)/history')}
           />
         </View>
 
@@ -379,6 +394,7 @@ function QuickTile({
 }
 
 function RecentRow({ w }: { w: Workout }) {
+  const router = useRouter();
   const exercises = (w.exercises || []).map((ex: any) => ex.exercise_name).filter(Boolean);
   const tagText = exercises.slice(0, 3).join(' · ');
   const completedSets = (w.exercises || []).reduce(
@@ -388,7 +404,11 @@ function RecentRow({ w }: { w: Workout }) {
   const date = new Date(w.completed_at || w.started_at || 0);
   const dateStr = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   return (
-    <View style={styles.recentCard}>
+    <TouchableOpacity
+      activeOpacity={0.7}
+      style={styles.recentCard}
+      onPress={() => router.push(`/(auth)/workout-detail?id=${w.workout_id}` as any)}
+    >
       <View style={styles.recentTop}>
         <Text style={styles.recentName}>{w.name || 'Workout'}</Text>
         <Text style={styles.recentDate}>{dateStr}</Text>
@@ -404,7 +424,7 @@ function RecentRow({ w }: { w: Workout }) {
           <Text style={styles.recentMetaText}>{exercises.length} exercises</Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

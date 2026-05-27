@@ -3500,7 +3500,13 @@ async def gemini_food_scan(
     """Scan a meal photo using Gemini 2.5 Flash with direct API key."""
     import json
 
-    prompt = """You are a precise nutrition analyst with expertise across global cuisines (Indian ICMR-NIN INDB 2024, Japanese MEXT, Korean NIAS, Chinese CDC, Thai INMU, Vietnamese NIN, Pakistani NIH-NIN, Sri Lankan MRI, Bangladeshi INFS reference data) and US restaurant chains. Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number, "is_packaged": boolean, "brand_name": string or null, "product_name": string or null, "is_restaurant": boolean, "restaurant_name": string or null, "restaurant_item": string or null, "size_variant": string or null, "cuisine_type": string or null, "dish_name_local": string or null}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
+    prompt = """You are a precise nutrition analyst with expertise across global cuisines (Indian ICMR-NIN INDB 2024, Japanese MEXT, Korean NIAS, Chinese CDC, Thai INMU, Vietnamese NIN, Pakistani NIH-NIN, Sri Lankan MRI, Bangladeshi INFS reference data) and US restaurant chains. Identify every food item in this image. For each item estimate the weight in grams using any reference objects visible such as hands, plates, utensils, or standard portion sizes. Return ONLY a JSON object with this exact structure: {"confidence": number between 0 and 1, "items": [{"name": string, "weight_g": number, "calories": number, "protein_g": number, "carbs_g": number, "fat_g": number, "is_packaged": boolean, "brand_name": string or null, "product_name": string or null, "is_restaurant": boolean, "restaurant_name": string or null, "restaurant_item": string or null, "size_variant": string or null, "cuisine_type": string or null, "dish_name_local": string or null, "ocr_label_detected": boolean}], "total": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number}, "uncertain_items": [string]}
+
+LABEL OCR (CRITICAL):
+- If you can see a nutrition facts label or any printed nutrition information in the image with clearly readable numbers (calories, protein, carbs, fat values printed as text on the package) — extract those EXACT numbers using OCR rather than estimating. Read the printed values for calories, protein_g, carbs_g, fat_g from the label and set "ocr_label_detected": true on that item.
+- Examples that should trigger OCR: a Chobani yogurt container showing "20g PROTEIN" on the lid; a protein bar wrapper with a visible Nutrition Facts panel; a soda can showing "140 cal" on the front; any visible per-serving nutrition text on the package.
+- When you OCR-read a label, the numbers must MATCH what is printed exactly (do not round, do not estimate). Use those printed numbers as-is.
+- If no label/nutrition text is clearly readable, set "ocr_label_detected": false and use your best estimate as usual.
 
 Important guidelines:
 - If you identify a **restaurant chain item** (Starbucks, McDonald's, Chipotle, Chick-fil-A, Subway, Domino's, Taco Bell, Burger King, Panera Bread — recognizable by cup/bag/wrapper logo, in-store decor, or distinctive menu item like Big Mac, Whopper, Crunchwrap), set "is_restaurant": true and fill in: "restaurant_name" (exact chain name), "restaurant_item" (specific item name e.g. "Caramel Macchiato", "Big Mac", "Chicken Burrito Bowl"), and "size_variant" (e.g. "Grande", "Medium", "6-inch", "Large") when visible. Example: {"restaurant_name": "Starbucks", "restaurant_item": "Caramel Macchiato", "size_variant": "Grande"}.
@@ -3547,6 +3553,28 @@ Important guidelines:
                 size_variant = it.get("size_variant")
                 cuisine_type = it.get("cuisine_type")
                 dish_name_local = it.get("dish_name_local")
+                ocr_label_detected = bool(it.get("ocr_label_detected"))
+
+                # --- 0. Label OCR (HIGHEST priority — exact printed numbers) ---
+                # FIX 5: when Gemini reads a nutrition label directly off the package,
+                # trust those numbers verbatim. No DB lookup, no overrides.
+                if ocr_label_detected:
+                    override_items.append({
+                        "name": (product_name or name or "Scanned item").strip(),
+                        "brand_name": brand_name,
+                        "product_name": product_name,
+                        "weight_g": weight if weight > 0 else None,
+                        "calories": float(it.get("calories") or 0),
+                        "protein_g": float(it.get("protein_g") or 0),
+                        "carbs_g": float(it.get("carbs_g") or 0),
+                        "fat_g": float(it.get("fat_g") or 0),
+                        "is_packaged": is_packaged,
+                        "ocr_label_detected": True,
+                        "source": "LABEL_OCR",
+                        "source_label": "Source: Label OCR — exact values",
+                    })
+                    matched_any_packaged = True
+                    continue
 
                 # --- 1. Restaurant chain lookup (highest priority if identified) ---
                 if is_restaurant and (restaurant_name or restaurant_item):

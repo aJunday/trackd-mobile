@@ -146,6 +146,7 @@ export default function WorkoutScreen() {
     fromProgram?: string;
     autoStart?: string;
     splitTemplate?: string;
+    previewTemplate?: string;
   }>();
 
   const [active, setActive] = useState<ActiveWorkout | null>(null);
@@ -185,6 +186,7 @@ export default function WorkoutScreen() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+  const [showPreMade, setShowPreMade] = useState(false); // FIX 3 — collapsed by default
   const [showPlateCalc, setShowPlateCalc] = useState<{ open: boolean; weight: number }>({
     open: false,
     weight: 100,
@@ -332,6 +334,17 @@ export default function WorkoutScreen() {
   // Handle autoStart from Dashboard "Start Workout" button
   useEffect(() => {
     if (!sessionToken || loading) return;
+    // FIX 2/4 — previewTemplate param: just open template preview (don't auto-start timer)
+    if (params.previewTemplate && !active) {
+      const tplId = String(params.previewTemplate);
+      router.setParams({ previewTemplate: '' } as any);
+      const all = [...templates.presets, ...templates.user_templates];
+      const t = all.find((p: any) => p.template_id === tplId);
+      if (t) {
+        setPreviewTemplate(t as Template);
+        return;
+      }
+    }
     if (params.autoStart !== '1') return;
     const splitTpl = params.splitTemplate;
     router.setParams({ autoStart: '', splitTemplate: '' } as any);
@@ -345,7 +358,7 @@ export default function WorkoutScreen() {
     }
     startEmptyWorkout();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.autoStart, params.splitTemplate, sessionToken, loading, active, templates.presets.length]);
+  }, [params.autoStart, params.splitTemplate, params.previewTemplate, sessionToken, loading, active, templates.presets.length, templates.user_templates.length]);
 
   const loadInitial = async () => {
     setLoading(true);
@@ -612,6 +625,42 @@ export default function WorkoutScreen() {
 
   const finishWorkout = () => {
     if (!active) return;
+    // FIX 7 — do NOT save a workout that has no exercises (or zero completed sets at all).
+    const hasAnyExercise = (active.exercises || []).length > 0;
+    const hasAnyCompletedSet = (active.exercises || []).some((ex) =>
+      (ex.sets || []).some((s) => s.completed && (s.reps || 0) > 0)
+    );
+    if (!hasAnyExercise || !hasAnyCompletedSet) {
+      Alert.alert(
+        'Nothing logged yet',
+        hasAnyExercise
+          ? 'Complete at least one set with weight & reps before saving this workout.'
+          : 'Add at least one exercise and complete a set before finishing.',
+        [
+          { text: 'Keep Going', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: async () => {
+              haptic();
+              if (active.workout_id) {
+                try {
+                  await authFetch(`${BACKEND_URL}/api/workouts/${active.workout_id}`, {
+                    method: 'DELETE',
+                    headers: apiHeaders(),
+                  });
+                } catch { /* ignore */ }
+              }
+              setActive(null);
+              setRestTimer({ active: false, secs: 0, total: 0 });
+              setProgramContext(null);
+              router.replace('/(auth)/workout' as any);
+            },
+          },
+        ]
+      );
+      return;
+    }
     Alert.alert('Finish Workout?', 'This will save your session and clear the timer.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -924,37 +973,7 @@ export default function WorkoutScreen() {
             <Text style={{ color: ACCENT, fontWeight: '800', fontSize: 14 }}>Create Template</Text>
           </TouchableOpacity>
 
-          {/* Pre-Made Templates */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.section}>Pre-Made Templates</Text>
-            <Text style={styles.sectionSub}>{orderedPresets.length} science-backed</Text>
-          </View>
-          <View style={styles.templateGrid}>
-            {orderedPresets.map((t) => (
-              <TouchableOpacity
-                key={t.template_id}
-                style={styles.templateCard}
-                activeOpacity={0.85}
-                onPress={() => setPreviewTemplate(t)}
-              >
-                <View style={styles.tplIconWrap}>
-                  <MaterialCommunityIcons name="dumbbell" size={22} color={ACCENT} />
-                </View>
-                <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
-                <Text style={styles.tplCardMeta}>
-                  {t.exercises.length} ex · ~{Math.round(t.exercises.length * 6 + 5)} min
-                </Text>
-                <Text style={styles.tplCardMuscles} numberOfLines={1}>
-                  {summarizeMuscles(t)}
-                </Text>
-                <View style={{ marginTop: 8 }}>
-                  <ScienceBadge refKeys={TEMPLATE_RESEARCH[t.template_id] || ['volume_schoenfeld_2017']} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* My Templates */}
+          {/* FIX 3 — My Templates FIRST (prominent), then Pre-Made (collapsed button) */}
           <View style={styles.sectionHeader}>
             <Text style={styles.section}>
               My Templates ({templates.limits?.custom_used ?? (templates.custom_templates || templates.user_templates.filter((t: any) => !t.is_copied)).length}/3)
@@ -966,7 +985,7 @@ export default function WorkoutScreen() {
               <View style={styles.emptyCard}>
                 <MaterialCommunityIcons name="bookmark-outline" size={28} color={TEXT_MUTED} />
                 <Text style={styles.emptyText}>No saved templates yet</Text>
-                <Text style={styles.emptySub}>Finish a workout and save it as a template. Max 3.</Text>
+                <Text style={styles.emptySub}>Tap Create Template above to build your own.</Text>
               </View>
             ) : (
               <View style={styles.templateGrid}>
@@ -997,6 +1016,50 @@ export default function WorkoutScreen() {
               </View>
             );
           })()}
+
+          {/* Pre-Made Templates — collapsible button (FIX 3) */}
+          <TouchableOpacity
+            style={styles.preMadeToggle}
+            onPress={() => setShowPreMade((p) => !p)}
+            activeOpacity={0.85}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={styles.preMadeIconWrap}>
+                <MaterialCommunityIcons name="flask-outline" size={18} color={ACCENT} />
+              </View>
+              <View>
+                <Text style={styles.preMadeTitle}>Pre-Made Templates</Text>
+                <Text style={styles.preMadeSub}>{orderedPresets.length} science-backed splits</Text>
+              </View>
+            </View>
+            <Ionicons name={showPreMade ? 'chevron-up' : 'chevron-down'} size={20} color={ACCENT} />
+          </TouchableOpacity>
+          {showPreMade && (
+            <View style={styles.templateGrid}>
+              {orderedPresets.map((t) => (
+                <TouchableOpacity
+                  key={t.template_id}
+                  style={styles.templateCard}
+                  activeOpacity={0.85}
+                  onPress={() => setPreviewTemplate(t)}
+                >
+                  <View style={styles.tplIconWrap}>
+                    <MaterialCommunityIcons name="dumbbell" size={22} color={ACCENT} />
+                  </View>
+                  <Text style={styles.tplCardName} numberOfLines={1}>{t.name}</Text>
+                  <Text style={styles.tplCardMeta}>
+                    {t.exercises.length} ex · ~{Math.round(t.exercises.length * 6 + 5)} min
+                  </Text>
+                  <Text style={styles.tplCardMuscles} numberOfLines={1}>
+                    {summarizeMuscles(t)}
+                  </Text>
+                  <View style={{ marginTop: 8 }}>
+                    <ScienceBadge refKeys={TEMPLATE_RESEARCH[t.template_id] || ['volume_schoenfeld_2017']} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Copied Templates */}
           {(() => {
@@ -2219,6 +2282,29 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   sectionSub: { color: TEXT_MUTED, fontSize: 11, fontWeight: '600' },
+  // FIX 3 — Pre-Made Templates collapsible button
+  preMadeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CARD,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  preMadeIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(245,166,35,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preMadeTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  preMadeSub: { color: TEXT_MUTED, fontSize: 11, marginTop: 2, fontWeight: '600' },
   linkText: { color: ACCENT, fontSize: 13, fontWeight: '600' },
   templateGrid: {
     flexDirection: 'row',

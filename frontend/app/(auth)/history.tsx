@@ -150,7 +150,7 @@ export default function HistoryScreen() {
                 <TouchableOpacity
                   key={workout.workout_id}
                   style={styles.workoutCard}
-                  onPress={() => router.push(`/(auth)/workout?id=${workout.workout_id}`)}
+                  onPress={() => router.push(`/(auth)/workout-detail?id=${workout.workout_id}`)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.workoutMain}>

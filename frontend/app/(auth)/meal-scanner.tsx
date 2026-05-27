@@ -878,6 +878,16 @@ export default function MealScanner() {
                     </TouchableOpacity>
                   </View>
 
+                  {/* Source badge for Label OCR (highest trust — direct from package) */}
+                  {(it as any).source === 'LABEL_OCR' ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <MaterialCommunityIcons name="text-recognition" size={12} color={SUCCESS} />
+                      <Text style={{ color: SUCCESS, fontSize: 10, fontWeight: '700', flex: 1 }}>
+                        {(it as any).source_label || 'Source: Label OCR — exact values'}
+                      </Text>
+                    </View>
+                  ) : null}
+
                   {/* Source badge for INDB Indian foods */}
                   {(it as any).source === 'INDB_2024' ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
